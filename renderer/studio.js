@@ -978,9 +978,66 @@
     renderChatList(); renderMsgs();
   }
 
+  /* ================= обновление программы ================= */
+  let upd = { state: 'idle' };
+  const mdPlain = (t) => String(t || '').replace(/\r/g, '').replace(/^#{1,6}\s*/gm, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/^\s*[-*]\s+/gm, '• ').replace(/\n{3,}/g, '\n\n').trim();
+  function renderUpdate() {
+    const u = upd, has = ['available', 'downloading', 'ready'].includes(u.state);
+    $('bUpdate').hidden = !has;
+    $('bUpdateText').textContent = u.state === 'ready' ? 'Перезапустить с ' + u.version : u.state === 'downloading' ? 'Скачиваю ' + u.version + '…' : 'Обновить до ' + u.version;
+    const when = u.checkedAt ? ' Проверено ' + fmtTime(u.checkedAt) + '.' : '';
+    const cur = 'Установлена версия ' + (u.current || '—') + '.';
+    $('updStatus').textContent = u.state === 'none' ? cur + ' Это последняя версия.' + when
+      : u.state === 'checking' ? cur + ' Проверяю…'
+      : has ? cur + ' Вышла версия ' + u.version + '.' + when
+      : u.state === 'private' ? cur + ' Не получается проверить: нужен ключ доступа.' + when
+      : u.state === 'error' ? cur + ' ' + (u.error || 'Ошибка проверки') + '.' + when : cur;
+    $('updOpen').hidden = !has; $('updCheck').disabled = u.state === 'checking' || u.state === 'downloading';
+    $('updTokenBox').hidden = !(u.state === 'private' || u.hasToken || (u.state === 'error' && /Ключ/.test(u.error || '')));
+    $('updTokenDel').hidden = !u.hasToken; $('updToken').placeholder = u.hasToken ? 'ключ сохранён — вставь новый, чтобы заменить' : 'github_pat_…';
+    // окно
+    $('updTitle').textContent = u.state === 'ready' ? 'Версия ' + u.version + ' готова' : 'Вышла версия ' + (u.version || '');
+    $('updSub').textContent = 'Сейчас установлена ' + u.current + '. ' + (u.portable ? 'Новая версия скачается рядом с программой, затем Студия перезапустится сама. Модели, чаты и настройки сохранятся, старая версия удалится.' : 'Файл скачается в папку updates, его нужно будет запустить вручную.');
+    $('updNotes').textContent = mdPlain(u.notes).replace(/^Как скачать[\s\S]*?(?=Что нового)/, '');
+    $('updProg').hidden = u.state !== 'downloading';
+    $('updErr').hidden = !u.error || u.state === 'none'; $('updErr').textContent = u.error || '';
+    $('updGo').textContent = u.state === 'ready' ? (u.portable ? 'Перезапустить' : 'Показать файл') : u.state === 'downloading' ? 'Остановить' : 'Скачать и перезапустить';
+    $('updGo').disabled = !has;
+    if (!has && !$('updDlg').hidden && u.state !== 'checking') $('updDlg').hidden = true;
+  }
+  S.onUpdate(u => { upd = u; renderUpdate(); });
+  S.onJob(({ id, job }) => {
+    if (id !== 'app-update' || !job) return;
+    const p = job.total ? job.done / job.total : 0;
+    $('updBar').style.width = (p * 100).toFixed(1) + '%';
+    $('updProgText').textContent = Math.floor(p * 100) + '% · ' + fmtBytes(job.done) + ' из ' + fmtBytes(job.total);
+  });
+  async function updAction() {
+    try {
+      if (upd.state === 'ready') { const r = await S.updateInstall(); if (r && r.shown) toast('Файл новой версии открыт в папке — запусти его'); return; }
+      if (upd.state === 'downloading') { await S.updateCancel(); return; }
+      $('updBar').style.width = '0%'; $('updProgText').textContent = 'Начинаю…';
+      upd = await S.updateDownload(); renderUpdate();
+      if (upd.state === 'ready' && upd.portable && !$('updDlg').hidden) { $('updGo').textContent = 'Перезапускаю…'; await S.updateInstall(); }
+    } catch (e) { failed(e, 'Обновление'); }
+  }
+  const openUpd = () => { renderUpdate(); $('updDlg').hidden = false; };
+  $('bUpdate').onclick = openUpd; $('updOpen').onclick = openUpd;
+  $('updGo').onclick = updAction;
+  $('updLater').onclick = () => { $('updDlg').hidden = true; };
+  $('updPage').onclick = () => S.updateOpenPage();
+  $('updDlg').addEventListener('pointerdown', e => { if (e.target.id === 'updDlg') $('updDlg').hidden = true; });
+  $('updCheck').onclick = async () => { try { upd = await S.updateCheck(); renderUpdate(); if (upd.state === 'none') toast('Установлена последняя версия'); } catch (e) { failed(e); } };
+  $('updTokenSave').onclick = async () => {
+    const v = $('updToken').value.trim(); if (!v) { $('updToken').focus(); return; }
+    try { upd = await S.setSetting('ghToken', v); $('updToken').value = ''; renderUpdate(); toast(upd.state === 'error' ? upd.error : 'Ключ сохранён'); } catch (e) { failed(e); }
+  };
+  $('updTokenDel').onclick = async () => { try { upd = await S.setSetting('ghToken', ''); renderUpdate(); toast('Ключ удалён'); } catch (e) { failed(e); } };
+  S.updateState().then(u => { upd = u; renderUpdate(); }).catch(() => {});
+
   /* ================= старт ================= */
   setTab('quality');
   loadChats(); histRefresh();
   refreshStatus().then(() => { if (st && st.packs.every(p => !p.ready)) { setTab('models'); } });
-  window.__studioTest = { remember, histRefresh, getHist: () => hist, getChats: () => chats, prPlace, doPrint, doc, openBytes, pushHist, cur, setTab, maskBox, regionAround, linesFromItems, ruleIssues, consistencyIssues, openLayout, sdGenerate, stroke: (a, b) => stroke(a, b) };
+  window.__studioTest = { getUpd: () => upd, remember, histRefresh, getHist: () => hist, getChats: () => chats, prPlace, doPrint, doc, openBytes, pushHist, cur, setTab, maskBox, regionAround, linesFromItems, ruleIssues, consistencyIssues, openLayout, sdGenerate, stroke: (a, b) => stroke(a, b) };
 })();

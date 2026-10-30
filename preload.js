@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('studio', {
   copyImage: (bytes) => call('copy-image', bytes),
   storeGet: (name) => call('store-get', name), storeSet: (name, data) => call('store-set', name, data),
   print: (job) => call('print', job),
+  updateState: () => call('update-state'), updateCheck: () => call('update-check'), updateDownload: () => call('update-download'),
+  updateCancel: () => call('update-cancel'), updateInstall: () => call('update-install'), updateOpenPage: () => call('update-open-page'),
+  onUpdate: on('update'),
   onJob: on('job'), onStatus: on('status'), onEngine: on('engine'), onChatDelta: on('chat-delta'),
   onUpscaleProgress: on('upscale-progress'), onCommand: on('command')
 });

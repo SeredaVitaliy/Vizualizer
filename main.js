@@ -86,14 +86,14 @@ async function resolveUrl(id) {
   }
   throw new Error('В репозитории ' + m.hf.repo + ' не нашёлся нужный файл');
 }
-async function downloadTo(url, dest, size, id) {
+async function downloadTo(url, dest, size, id, extraHeaders) {
   await fsp.mkdir(path.dirname(dest), { recursive: true });
   const part = dest + '.part';
   let have = 0;
   try { have = (await fsp.stat(part)).size; } catch (e) { have = 0; }
   if (size && have >= size) { await fsp.rename(part, dest); return; }
   const ctl = new AbortController(); aborts[id] = ctl;
-  const headers = { 'User-Agent': 'Studio/1.0' };
+  const headers = Object.assign({ 'User-Agent': 'Studio/1.0' }, extraHeaders || {});
   if (have > 0) headers.Range = 'bytes=' + have + '-';
   const r = await net.fetch(url, { headers, signal: ctl.signal });
   if (!(r.status === 200 || r.status === 206)) throw new Error('Сервер ответил ' + r.status);
@@ -360,8 +360,9 @@ ipcMain.handle('status', wrap(() => status()));
 ipcMain.handle('install', wrap(async ids => { for (const id of ids) await install(id); return status(); }));
 ipcMain.handle('cancel-install', wrap(id => { if (aborts[id]) aborts[id].abort(); return true; }));
 ipcMain.handle('set-setting', wrap(async (k, v) => {
-  if (!['hfHost', 'vlm'].includes(k)) throw new Error('bad key');
-  settings[k] = v; saveSettings();
+  if (!['hfHost', 'vlm', 'ghToken'].includes(k)) throw new Error('bad key');
+  settings[k] = k === 'ghToken' ? String(v || '').trim() : v; saveSettings();
+  if (k === 'ghToken') { upd = { state: 'idle' }; return checkUpdate(); }
   if (k === 'vlm' && engine.kind === 'text') await stopEngine();
   return status();
 }));
@@ -517,6 +518,114 @@ async function printJob(job) {
 }
 ipcMain.handle('print', wrap(printJob));
 
+/* ---------------- обновление программы ---------------- */
+// Новые версии выходят в Releases репозитория. Программа сама проверяет последний выпуск,
+// по кнопке скачивает новый exe рядом с текущим, запускает его и закрывается; новая версия удаляет старый exe.
+const UPD_REPO = 'SeredaVitaliy/Vizualizer';
+const APP_VERSION = require('./package.json').version;
+const UPD_ID = 'app-update';
+let upd = { state: 'idle' }; // idle | checking | none | available | downloading | ready | private | error
+const portableExe = () => process.env.PORTABLE_EXECUTABLE_FILE || '';
+const updDir = () => process.env.PORTABLE_EXECUTABLE_DIR || D('updates');
+function verCmp(a, b) {
+  const pa = String(a).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0), pb = String(b).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0) ? 1 : -1;
+  return 0;
+}
+function ghHeaders() {
+  const h = { 'User-Agent': 'Studio/' + APP_VERSION, Accept: 'application/vnd.github+json' };
+  if (settings.ghToken) h.Authorization = 'Bearer ' + settings.ghToken;
+  return h;
+}
+function updState() { return Object.assign({}, upd, { current: APP_VERSION, hasToken: !!settings.ghToken, portable: !!portableExe(), repo: UPD_REPO }); }
+function updPush() { push('update', updState()); }
+async function checkUpdate() {
+  if (upd.state === 'downloading' || upd.state === 'checking') return updState();
+  const prev = upd; upd = Object.assign({}, prev, { state: 'checking' }); updPush();
+  try {
+    const r = await net.fetch((process.env.STUDIO_GH_API || 'https://api.github.com') + '/repos/' + UPD_REPO + '/releases/latest', { headers: ghHeaders() });
+    if (r.status === 401) upd = { state: 'error', error: 'Ключ доступа GitHub не подходит или истёк' };
+    else if (r.status === 404 || r.status === 403) upd = settings.ghToken ? { state: 'error', error: 'Ключ не даёт доступа к репозиторию ' + UPD_REPO } : { state: 'private' };
+    else if (!r.ok) throw new Error('GitHub ответил ' + r.status);
+    else {
+      const j = await r.json(), v = String(j.tag_name || '').replace(/^v/, '');
+      const a = (j.assets || []).find(x => /portable\.exe$/i.test(x.name));
+      if (a && verCmp(v, APP_VERSION) > 0) {
+        const file = path.join(updDir(), a.name);
+        let ready = false; try { ready = (await fsp.stat(file)).size === a.size; } catch (e) { /* ещё не скачано */ }
+        upd = { state: ready ? 'ready' : 'available', version: v, notes: String(j.body || ''), page: j.html_url, file, asset: { name: a.name, size: a.size, api: a.url, direct: a.browser_download_url } };
+      } else upd = { state: 'none' };
+    }
+  } catch (e) { upd = { state: 'error', error: 'Не удалось проверить: ' + String((e && e.message) || e) }; }
+  upd.checkedAt = Date.now(); updPush(); return updState();
+}
+// у закрытого репозитория файл отдаётся по временной ссылке — получаем её без скачивания
+function assetLocation(apiUrl) {
+  return new Promise((res, rej) => {
+    const h = ghHeaders(); h.Accept = 'application/octet-stream';
+    const req = net.request({ url: apiUrl, redirect: 'manual', headers: h });
+    req.on('redirect', (code, method, url) => { res(url); try { req.abort(); } catch (e) { /* уже закрыт */ } });
+    req.on('response', (r) => { rej(new Error('GitHub ответил ' + r.statusCode)); });
+    req.on('error', rej); req.end();
+  });
+}
+async function downloadUpdate() {
+  if (upd.state !== 'available' && upd.state !== 'error') return updState();
+  if (!upd.asset) { await checkUpdate(); if (upd.state !== 'available') return updState(); }
+  const u = upd; upd = Object.assign({}, u, { state: 'downloading', error: '' }); updPush();
+  try {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const url = settings.ghToken ? await assetLocation(u.asset.api) : u.asset.direct;
+        await downloadTo(url, u.file, u.asset.size, UPD_ID);
+        break;
+      } catch (err) {
+        if (attempt >= 5 || /aborted|AbortError|ENOSPC/i.test(String(err && err.message))) throw err;
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
+    if ((await fsp.stat(u.file)).size !== u.asset.size) throw new Error('файл скачался не полностью');
+    delete jobs[UPD_ID]; push('job', { id: UPD_ID, job: null });
+    upd = Object.assign({}, u, { state: 'ready', error: '' });
+  } catch (e) {
+    delete jobs[UPD_ID]; push('job', { id: UPD_ID, job: null });
+    upd = Object.assign({}, u, { state: 'available', error: /aborted|AbortError/i.test(String(e && e.message)) ? '' : 'Загрузка не удалась: ' + String((e && e.message) || e) });
+  }
+  updPush(); return updState();
+}
+async function installUpdate() {
+  if (upd.state !== 'ready' || !upd.file) throw new Error('Обновление ещё не скачано');
+  if (!portableExe()) { shell.showItemInFolder(upd.file); return { shown: true }; }
+  await new Promise((res, rej) => {
+    const p = spawn(upd.file, [], { detached: true, stdio: 'ignore', cwd: path.dirname(upd.file) });
+    p.once('error', (e) => rej(new Error('Не удалось запустить новую версию: ' + e.message + '. Запусти ' + path.basename(upd.file) + ' вручную.')));
+    p.once('spawn', () => { p.unref(); res(); });
+  });
+  setTimeout(() => app.quit(), 300);
+  return { restarting: true };
+}
+// после обновления: убрать старые версии рядом с текущим exe (старая программа может ещё закрываться — пробуем несколько раз)
+async function cleanupOldVersions() {
+  const me = portableExe(); if (!me) return;
+  const dir = path.dirname(me);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let left = 0;
+    for (const n of fs.readdirSync(dir)) {
+      const m = /^Studio-(\d+\.\d+\.\d+)-portable\.exe(\.part)?$/i.exec(n);
+      if (!m || path.join(dir, n).toLowerCase() === me.toLowerCase() || verCmp(m[1], APP_VERSION) >= 0) continue;
+      try { await fsp.rm(path.join(dir, n), { force: true }); } catch (e) { left++; }
+    }
+    if (!left) return;
+    await new Promise(r => setTimeout(r, 10000));
+  }
+}
+ipcMain.handle('update-state', wrap(() => updState()));
+ipcMain.handle('update-check', wrap(() => checkUpdate()));
+ipcMain.handle('update-download', wrap(() => downloadUpdate()));
+ipcMain.handle('update-cancel', wrap(() => { if (aborts[UPD_ID]) aborts[UPD_ID].abort(); return true; }));
+ipcMain.handle('update-install', wrap(() => installUpdate()));
+ipcMain.handle('update-open-page', wrap(() => shell.openExternal(upd.page || 'https://github.com/' + UPD_REPO + '/releases')));
+
 /* ---------------- окно ---------------- */
 function createWindow() {
   win = new BrowserWindow({
@@ -563,6 +672,9 @@ app.whenReady().then(() => {
   ses.setPermissionRequestHandler((wc, perm, cb, details) => cb(String((details && details.requestingUrl) || '').startsWith('app://') && ['local-fonts', 'clipboard-sanitized-write', 'clipboard-read'].includes(perm)));
   ses.setPermissionCheckHandler((wc, perm, origin) => String(origin || '').startsWith('app://') && ['local-fonts', 'clipboard-sanitized-write', 'clipboard-read'].includes(perm));
   buildMenu(); createWindow();
+  // проверка обновлений: через 8 секунд после запуска и раз в 6 часов
+  setTimeout(() => { checkUpdate(); cleanupOldVersions().catch(() => {}); }, 8000);
+  setInterval(checkUpdate, 6 * 3600 * 1000);
 });
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', () => { if (engine.proc) try { engine.proc.kill(); } catch (e) { /* уже закрыт */ } Object.values(aborts).forEach(a => a.abort()); });
