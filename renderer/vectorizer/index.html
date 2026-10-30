@@ -1,0 +1,1478 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:"><style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style><title>Векторизатор</title></head><body>
+<link rel="stylesheet" href="../fonts.css">
+<style>
+/* Layout: workbench — large stage with tool strip on the left, a narrow control rail on the right; stacks on phones */
+:root{
+  --bg:#eceef2; --surface:#ffffff; --raised:#f6f7f9; --ink:#131925; --muted:#5b6476; --line:#d5d9e1;
+  --accent:#2a4ee0; --accent-ink:#ffffff; --accent-soft:#e3e9ff;
+  --check-a:#e4e7ec; --check-b:#f8f9fb; --danger:#b4332b; --sel:#ff3d7f;
+  --f-display:"Unbounded","Onest",system-ui,sans-serif;
+  --f-body:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e121a; --surface:#161b26; --raised:#1c2230; --ink:#e6e9ef; --muted:#909aac; --line:#2a3242;
+  --accent:#7d95ff; --accent-ink:#0a0f1e; --accent-soft:#232c4a;
+  --check-a:#1b2130; --check-b:#222a3a; --danger:#ff8a7f; --sel:#ff6a9c; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0e121a; --surface:#161b26; --raised:#1c2230; --ink:#e6e9ef; --muted:#909aac; --line:#2a3242;
+  --accent:#7d95ff; --accent-ink:#0a0f1e; --accent-soft:#232c4a;
+  --check-a:#1b2130; --check-b:#222a3a; --danger:#ff8a7f; --sel:#ff6a9c; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.wrap{max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 32px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(22px,4vw,30px);letter-spacing:-.01em;margin:0;text-wrap:balance}
+h1 small{display:block;font-family:var(--f-body);font-weight:400;font-size:14px;color:var(--muted);letter-spacing:0;margin-top:4px}
+.btn{font:inherit;font-size:14px;font-weight:500;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px 12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.07)}
+.btn.sm{min-height:32px;padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start}
+@media (max-width:920px){main{grid-template-columns:minmax(0,1fr)}}
+
+.stage-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;min-width:0;display:flex;flex-direction:column}
+@media (min-width:921px){.stage-card{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px;border-bottom:1px solid var(--line)}
+.seg{display:inline-flex;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px;flex-wrap:wrap}
+.seg button{font:inherit;font-size:13px;border:0;background:transparent;color:var(--muted);padding:6px 10px;border-radius:6px;cursor:pointer;min-height:32px;display:inline-flex;align-items:center;gap:6px}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.seg.tools button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);box-shadow:none}
+.seg kbd{font-family:var(--f-mono);font-size:10px;opacity:.6}
+.seg svg{width:16px;height:16px;flex:none}
+.viewport{position:relative;overflow:auto;height:min(68vh,720px);min-height:280px;background-color:var(--check-b);
+  background-image:linear-gradient(45deg,var(--check-a) 25%,transparent 25%,transparent 75%,var(--check-a) 75%),linear-gradient(45deg,var(--check-a) 25%,transparent 25%,transparent 75%,var(--check-a) 75%);
+  background-size:20px 20px;background-position:0 0,10px 10px}
+.vp-inner{min-width:100%;min-height:100%;display:grid;place-items:center;padding:16px;width:max-content}
+.canvas{position:relative;touch-action:pan-y pinch-zoom;user-select:none;-webkit-user-select:none}
+.canvas.nopan{touch-action:none}
+.canvas[data-tool="select"]{cursor:crosshair}
+.canvas[data-tool="fill"]{cursor:cell}
+.canvas[data-tool="pick"]{cursor:copy}
+.canvas[data-tool="hand"].zoomed{cursor:grab}
+.canvas img,.canvas .vec,.canvas .ov{position:absolute;inset:0;width:100%;height:100%;display:block}
+.canvas.pixel img{image-rendering:pixelated}
+.vec svg,.ov{overflow:visible}
+.ov{pointer-events:none}
+.ov .sel{fill:var(--sel);fill-opacity:.22;stroke:var(--sel);stroke-width:1.6;stroke-dasharray:5 4;animation:ants .8s linear infinite}
+.ov .hov{fill:var(--accent);fill-opacity:.12;stroke:var(--accent);stroke-width:2}
+.ov .mq{fill:var(--accent);fill-opacity:.08;stroke:var(--accent);stroke-width:1.2;stroke-dasharray:4 3}
+@keyframes ants{to{stroke-dashoffset:-9}}
+.handle{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);transform:translateX(-1px);pointer-events:none}
+.handle::after{content:"";position:absolute;top:50%;left:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--surface)}
+.tag{position:absolute;top:8px;font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;background:var(--surface);color:var(--muted);padding:3px 7px;border-radius:5px;border:1px solid var(--line);pointer-events:none}
+.tag.l{left:8px}.tag.r{right:8px}
+.busy{position:absolute;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--surface) 55%,transparent);font-weight:500;z-index:2}
+.busy span{background:var(--surface);border:1px solid var(--line);padding:8px 14px;border-radius:8px}
+.statusbar{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);min-height:38px}
+.statusbar .dot{display:inline-block;width:14px;height:14px;border-radius:4px;border:1px solid var(--line);vertical-align:-2px;margin-right:6px}
+.statusbar .hex{font-family:var(--f-mono);color:var(--ink)}
+.splitrow{display:flex;gap:10px;align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.splitrow input{flex:1;min-width:0;accent-color:var(--accent)}
+.stats{display:flex;flex-wrap:wrap;gap:6px 18px;padding:10px 12px;border-top:1px solid var(--line);font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.stats b{color:var(--ink);font-weight:500}
+.note{font-size:13px;color:var(--muted);padding:0 12px 12px}
+.note:empty{display:none}
+.note.sample{color:var(--accent)}
+
+.rail{display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:12px}
+.panel h2{font-family:var(--f-mono);font-size:11px;font-weight:500;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel h2 span{letter-spacing:0;text-transform:none;font-size:12px}
+.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+.presets button{font:inherit;font-size:13px;text-align:left;border:1px solid var(--line);background:var(--raised);color:var(--ink);border-radius:8px;padding:8px 10px;cursor:pointer;min-height:40px}
+.presets button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.presets button small{display:block;font-size:11px;color:var(--muted)}
+.field{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center}
+.field label,.lbl{font-size:14px}
+.field output{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.field input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.field .hint,.hint{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:center;font-size:14px}
+.check input{accent-color:var(--accent);width:18px;height:18px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.grid2 .wide{grid-column:1/-1}
+.curcolor{display:flex;gap:8px;align-items:center}
+.bigchip{width:44px;height:44px;border-radius:9px;border:1px solid var(--line);cursor:pointer;padding:0;flex:none;position:relative}
+.curcolor input[type=text]{font-family:var(--f-mono);font-size:14px;width:96px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--ink)}
+.hidden-color{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.recent{display:flex;flex-wrap:wrap;gap:4px}
+.recent button{width:22px;height:22px;border-radius:5px;border:1px solid var(--line);cursor:pointer;padding:0}
+.selinfo{font-size:13px;color:var(--muted)}
+.selinfo b{color:var(--ink)}
+.swatches{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow:auto;margin-right:-6px;padding-right:6px}
+.locks{display:flex;flex-wrap:wrap;gap:6px}.locks:empty::before{content:'Пока нет';font-size:12px;color:var(--muted)}
+.lock{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 4px 3px 3px;font-family:var(--f-mono);font-size:12px;background:var(--raised)}
+.lock i{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);display:inline-block}
+.lock button{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;padding:0 4px}
+#lockPick{width:36px;height:30px;border:1px solid var(--line);border-radius:6px;background:none;padding:2px}
+.sw{position:relative;display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:4px 6px 4px 4px;background:var(--raised);font-family:var(--f-mono);font-size:12px}
+.sw.off{opacity:.5}
+.sw.off .chip{background-image:linear-gradient(135deg,transparent 45%,var(--danger) 45%,var(--danger) 55%,transparent 55%)!important}
+.chip{width:28px;height:28px;border-radius:6px;border:1px solid var(--line);cursor:pointer;padding:0}
+.sw .name{border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;padding:4px 2px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sw .share{color:var(--muted);font-variant-numeric:tabular-nums}
+.sw .eye{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:11px;padding:4px}
+.unitrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+.unitrow input{font:inherit;font-family:var(--f-mono);padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--ink);min-width:0;width:100%}
+.exports{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.exports .btn{justify-content:space-between;min-width:0}
+.exports .btn span{font-family:var(--f-mono);font-size:11px;opacity:.7}
+.exports .wide{grid-column:1/-1}
+.msg{font-size:13px;color:var(--muted);min-height:1.2em}
+.msg.err{color:var(--danger)}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+.drop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 18%,transparent);border:3px dashed var(--accent);font-family:var(--f-display);font-size:22px;color:var(--ink);pointer-events:none}
+details.keys summary{cursor:pointer;font-size:13px;color:var(--muted)}
+details.keys dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px;margin:8px 0 0}
+details.keys dt{font-family:var(--f-mono);font-size:12px;color:var(--ink)}
+details.keys dd{margin:0;color:var(--muted)}
+.ai-log{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow:auto}
+.ai-log:empty{display:none}
+.bubble{padding:8px 10px;border-radius:8px;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;max-width:92%}
+.bubble.me{background:var(--accent-soft);align-self:flex-end}
+.bubble.ai{background:var(--raised);border:1px solid var(--line);align-self:flex-start}
+.bubble.act{font-family:var(--f-mono);font-size:12px;color:var(--muted);padding:2px 4px;background:none;max-width:100%}
+.bubble.err{color:var(--danger);background:none;border:0;padding:2px 4px}
+.ai-box{display:flex;flex-direction:column;gap:6px}
+.ai-box textarea{font:inherit;font-size:14px;resize:vertical;min-height:64px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--ink);width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chips button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--raised);color:var(--ink);border-radius:999px;padding:4px 10px;cursor:pointer}
+.panel.ai{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Векторизатор<small>PNG, JPG, WebP → SVG, PDF, EPS, DXF. Автотрассировка и редактор цветов.</small></h1>
+    <div class="row">
+      <input type="file" id="file" accept="image/*" hidden>
+      <button class="btn" id="rotL" title="Повернуть влево">⟲ 90°</button>
+      <button class="btn" id="rotR" title="Повернуть вправо">⟳ 90°</button>
+      <button class="btn" id="flipH" title="Отразить по горизонтали">⇋</button>
+      <button class="btn primary" id="pick">Загрузить картинку</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="stage-card" aria-label="Холст">
+      <div class="toolbar">
+        <div class="seg tools" id="tools" role="group" aria-label="Инструменты">
+          <button data-t="hand" aria-pressed="true" title="Просмотр (H)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 8V3.5a1 1 0 0 1 2 0V7m0-4.5a1 1 0 0 1 2 0V7m0-3.5a1 1 0 0 1 2 0V8m0-2a1 1 0 0 1 2 0v3.5A5 5 0 0 1 8 14.5 4.5 4.5 0 0 1 3.6 11L2.5 8.6a1 1 0 0 1 1.7-1L5 9"/></svg>Просмотр<kbd>H</kbd></button>
+          <button data-t="select" aria-pressed="false" title="Выделение области (V)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 2l9 5-4 1.2L6 12z"/><path d="M8 8.2l3.5 4.3" stroke-linecap="round"/></svg>Выделение<kbd>V</kbd></button>
+          <button data-t="fill" aria-pressed="false" title="Заливка (G)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M7 2.5l5.5 5.5L8 12.5 2.5 7z"/><path d="M2.5 7h10"/><path d="M13.5 10.5s1 1.3 1 2a1 1 0 0 1-2 0c0-.7 1-2 1-2z" fill="currentColor"/></svg>Заливка<kbd>G</kbd></button>
+          <button data-t="pick" aria-pressed="false" title="Пипетка (I)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5l3 3-1.5 1.5-3-3z"/><path d="M9.5 5.5L3 12v1.5h1.5L11 7"/></svg>Пипетка<kbd>I</kbd></button>
+        </div>
+        <div class="row">
+          <div class="seg" id="view" role="group" aria-label="Режим просмотра">
+            <button data-v="compare" aria-pressed="true">Сравнение</button>
+            <button data-v="vector" aria-pressed="false">Вектор</button>
+            <button data-v="outline" aria-pressed="false">Контуры</button>
+            <button data-v="original" aria-pressed="false">Оригинал</button>
+          </div>
+          <div class="seg" id="zoom" role="group" aria-label="Масштаб">
+            <button data-z="1" aria-pressed="true">1×</button>
+            <button data-z="2" aria-pressed="false">2×</button>
+            <button data-z="4" aria-pressed="false">4×</button>
+            <button data-z="8" aria-pressed="false">8×</button>
+          </div>
+        </div>
+      </div>
+      <div class="viewport" id="viewport">
+        <div class="vp-inner">
+          <div class="canvas" id="canvas" data-tool="hand">
+            <img id="orig" alt="Исходное изображение" draggable="false">
+            <div class="vec" id="vec"></div>
+            <svg class="ov" id="ov" preserveAspectRatio="none"></svg>
+            <div class="handle" id="handle"></div>
+            <span class="tag l" id="tagL">Оригинал</span><span class="tag r" id="tagR">Вектор</span>
+          </div>
+        </div>
+        <div class="busy" id="busy" hidden><span id="busyText">Векторизую…</span></div>
+      </div>
+      <div class="splitrow" id="splitrow"><span>Оригинал</span><input type="range" id="split" min="0" max="100" value="50" aria-label="Граница сравнения"><span>Вектор</span></div>
+      <div class="statusbar" id="status"></div>
+      <div class="stats" id="stats"></div>
+      <div class="note" id="note"></div>
+    </section>
+
+    <aside class="rail">
+      <section class="panel">
+        <h2>Режим трассировки</h2>
+        <div class="presets" id="presets">
+          <button data-p="auto" aria-pressed="true">Авто<small>сам подберёт</small></button>
+          <button data-p="logo" aria-pressed="false">Логотип<small>мало цветов</small></button>
+          <button data-p="illu" aria-pressed="false">Иллюстрация<small>16 цветов</small></button>
+          <button data-p="photo" aria-pressed="false">Фото<small>32 цвета</small></button>
+          <button data-p="bw" aria-pressed="false">Ч/Б<small>штрих, силуэт</small></button>
+        </div>
+        <div class="msg" id="autoMsg"></div>
+      </section>
+
+      <section class="panel ai" id="aiPanel">
+        <h2>ИИ-помощник <span id="aiState"></span></h2>
+        <button class="btn primary" id="aiAuto">Подобрать настройки по картинке</button>
+        <div class="msg" id="aiAutoMsg">Claude посмотрит на картинку, выберет режим, число цветов и решит, убирать ли фон.</div>
+        <div class="ai-box" id="aiChat">
+          <div class="ai-log" id="aiLog" aria-live="polite"></div>
+          <div class="chips" id="aiChips">
+            <button>Убери фон</button>
+            <button>Оставь только 4 основных цвета</button>
+            <button>Сделай главный объект тёмно-синим</button>
+            <button>Слей почти одинаковые оттенки</button>
+          </div>
+          <textarea id="aiInput" placeholder="Что сделать? Например: «перекрась красное в фирменный #e4572e, а фон сделай белым»"></textarea>
+          <div class="row"><button class="btn primary" id="aiSend">Выполнить</button><button class="btn" id="aiStop" hidden>Стоп</button><button class="btn" id="aiClear">Очистить</button></div>
+          <div class="hint">Каждое изменение можно отменить кнопкой «Отменить» в «Правке».</div>
+        </div>
+      </section>
+
+      <section class="panel" id="editPanel">
+        <h2>Правка <span class="row"><button class="btn sm" id="undo" title="Отменить (Ctrl+Z)">↶ Отменить</button><button class="btn sm" id="redo" title="Повторить (Ctrl+Shift+Z)">↷</button></span></h2>
+        <div class="curcolor">
+          <button class="bigchip" id="curChip" aria-label="Выбрать текущий цвет"></button>
+          <input type="color" class="hidden-color" id="curInput" tabindex="-1">
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+            <span class="lbl">Цвет заливки</span>
+            <input type="text" id="curHex" maxlength="7" spellcheck="false" aria-label="HEX текущего цвета">
+          </div>
+        </div>
+        <div class="recent" id="recent" aria-label="Недавние цвета"></div>
+
+        <div class="field" style="gap:6px">
+          <span class="lbl">Что захватывать кликом</span>
+          <div class="seg" id="scope" role="group" aria-label="Область захвата" style="grid-column:1/-1">
+            <button data-s="shape" aria-pressed="false">Фигуру</button>
+            <button data-s="connected" aria-pressed="true">Связанную область</button>
+            <button data-s="similar" aria-pressed="false">Все похожие</button>
+          </div>
+          <span class="hint" id="scopeHint"></span>
+        </div>
+        <div class="field"><label for="tol">Допуск по оттенку</label><output id="oTol"></output>
+          <input type="range" id="tol" min="0" max="60" step="1">
+          <span class="hint">0 — только точно такой же цвет. Больше — захватывает соседние оттенки.</span></div>
+        <div class="field" style="gap:6px">
+          <span class="lbl">Выделение рамкой и кликом</span>
+          <div class="seg" id="selmode" role="group" aria-label="Способ выделения" style="grid-column:1/-1">
+            <button data-m="new" aria-pressed="true">Новое</button>
+            <button data-m="add" aria-pressed="false">Добавить</button>
+            <button data-m="sub" aria-pressed="false">Вычесть</button>
+          </div>
+        </div>
+
+        <div class="selinfo" id="selInfo"></div>
+        <div class="grid2" id="selActions">
+          <button class="btn sm" data-a="fill">Залить текущим</button>
+          <button class="btn sm" data-a="take">Взять цвет</button>
+          <button class="btn sm" data-a="merge">Объединить в один</button>
+          <button class="btn sm" data-a="delete">Удалить</button>
+          <button class="btn sm" data-a="grow">Добавить похожие</button>
+          <button class="btn sm" data-a="invert">Инвертировать</button>
+          <button class="btn sm" data-a="all">Выделить всё</button>
+          <button class="btn sm" data-a="none">Снять</button>
+        </div>
+        <div class="grid2">
+          <button class="btn sm" id="bgBtn">Убрать фон</button>
+          <button class="btn sm" id="restoreAll">Вернуть удалённое</button>
+        </div>
+        <details class="keys">
+          <summary>Горячие клавиши</summary>
+          <dl>
+            <dt>V G I H</dt><dd>выделение, заливка, пипетка, просмотр</dd>
+            <dt>Shift + клик</dt><dd>добавить к выделению</dd>
+            <dt>Alt + клик</dt><dd>вычесть; в заливке — взять цвет</dd>
+            <dt>Delete</dt><dd>удалить выделенное</dd>
+            <dt>F</dt><dd>залить выделенное текущим цветом</dd>
+            <dt>Ctrl+Z / Ctrl+Shift+Z</dt><dd>отменить / повторить</dd>
+            <dt>Ctrl+A, Esc</dt><dd>выделить всё, снять выделение</dd>
+          </dl>
+        </details>
+      </section>
+
+      <section class="panel">
+        <h2>Палитра <span id="palCount"></span></h2>
+        <div class="swatches" id="swatches"></div>
+        <div class="field"><span class="lbl">Слить похожие оттенки</span>
+          <button class="btn sm" id="mergeSimilar" style="justify-self:end">Слить</button>
+          <span class="hint">Цвета ближе допуска по оттенку станут одним — самым крупным по площади.</span></div>
+        <div class="hint">Квадрат — перекрасить весь цвет. HEX — выделить все области этого цвета.</div>
+      </section>
+
+      <section class="panel">
+        <h2>Настройки трассировки</h2>
+        <div class="field" id="fMerge" hidden><label for="merge">Выравнивание цвета</label><output id="oMerge"></output>
+          <input type="range" id="merge" min="1" max="10" step="1">
+          <span class="hint">Сколько похожих оттенков считать одним цветом. Правее — меньше цветов и ровнее заливки.</span></div>
+        <div class="field" id="fColors"><label for="colors">Цвета</label><output id="oColors"></output>
+          <input type="range" id="colors" min="2" max="64" step="1"></div>
+        <div class="field" id="fThresh" hidden><label for="thresh">Порог чёрного</label><output id="oThresh"></output>
+          <input type="range" id="thresh" min="1" max="254" step="1"></div>
+        <div class="field"><label for="detail">Детализация</label><output id="oDetail"></output>
+          <input type="range" id="detail" min="1" max="10" step="1">
+          <span class="hint">Больше — точнее углы, но больше узлов</span></div>
+        <div class="field"><label for="smooth">Сглаживание шума</label><output id="oSmooth"></output>
+          <input type="range" id="smooth" min="0" max="5" step="1"></div>
+        <div class="field"><label for="speck">Убрать мелкие пятна</label><output id="oSpeck"></output>
+          <input type="range" id="speck" min="0" max="64" step="1"></div>
+        <div class="field" id="fNeural" hidden style="gap:6px"><span class="lbl">Подготовка нейросетью</span>
+          <div class="seg" id="neural" role="group" aria-label="Подготовка нейросетью" style="grid-column:1/-1">
+            <button data-n="auto" aria-pressed="true">Авто</button><button data-n="always" aria-pressed="false">Всегда</button><button data-n="off" aria-pressed="false">Выкл</button>
+          </div>
+          <span class="hint" id="neuralHint" style="grid-column:1/-1">Нейросеть увеличивает картинку и убирает шум и размытие по краям — контуры получаются ровнее. «Авто» — для картинок меньше 1500 px, «Всегда» — и для больших (дольше).</span></div>
+        <label class="check" id="fObj" hidden><input type="checkbox" id="objOnly"> <span>Только объект: фон отделяет нейросеть</span></label>
+        <span class="hint" id="objHint" hidden></span>
+        <div class="hint">Новые настройки пересобирают вектор. Если нужно, верни прошлый результат кнопкой «Отменить».</div>
+      </section>
+
+      <section class="panel" id="fLocked" hidden>
+        <h2>Свои цвета <span id="lockCount"></span></h2>
+        <div class="locks" id="lockList"></div>
+        <div class="row"><input type="color" id="lockPick" value="#e4572e" aria-label="Цвет"><button class="btn sm" id="lockAdd">Добавить</button><button class="btn sm" id="lockFromPal" title="Сделать текущую палитру своей">Взять текущую палитру</button></div>
+        <label class="check"><input type="checkbox" id="lockStrict"> Использовать только эти цвета</label>
+        <div class="hint">Свои цвета заменяют похожие найденные точно, без соседних оттенков. Удобно для фирменных цветов.</div>
+      </section>
+
+      <section class="panel">
+        <h2>Вывод</h2>
+        <div class="field" style="gap:6px"><span class="lbl">Стиль</span>
+          <div class="seg" id="style" role="group" aria-label="Стиль вывода" style="grid-column:1/-1">
+            <button data-st="fill" aria-pressed="true">Заливка</button>
+            <button data-st="stroke" aria-pressed="false">Только обводка</button>
+          </div></div>
+        <div class="field" id="fStroke" hidden><label for="strokeW">Толщина линии</label><output id="oStroke"></output>
+          <input type="range" id="strokeW" min="0.25" max="6" step="0.25"></div>
+        <label class="check"><input type="checkbox" id="seams"> Закрыть щели между цветами</label>
+        <div class="field" style="gap:6px"><label for="outW">Ширина файла</label><output id="oOutH"></output>
+          <div class="unitrow" style="grid-column:1/-1">
+            <input type="number" id="outW" min="1" step="1" inputmode="decimal">
+            <div class="seg" id="unit" role="group" aria-label="Единицы"><button data-u="px" aria-pressed="true">px</button><button data-u="mm" aria-pressed="false">мм</button></div>
+          </div>
+          <span class="hint">Для SVG, PDF, EPS и DXF. Высота считается по пропорции.</span></div>
+      </section>
+
+      <section class="panel">
+        <h2>Скачать</h2>
+        <div class="exports" id="exports">
+          <button class="btn primary" data-f="svg">SVG <span>вектор</span></button>
+          <button class="btn" data-f="pdf">PDF <span>вектор</span></button>
+          <button class="btn" data-f="eps">EPS <span>в .zip</span></button>
+          <button class="btn" data-f="dxf">DXF <span>в .zip</span></button>
+          <button class="btn" data-f="png">PNG <span id="pngLbl">2×</span></button>
+          <button class="btn" data-f="all">Все форматы <span>.zip</span></button>
+          <button class="btn wide" id="copySvg">Скопировать код SVG</button>
+        </div>
+        <div class="field"><label for="pngScale">Размер PNG</label><output id="oPng"></output>
+          <input type="range" id="pngScale" min="1" max="8" step="1" value="2"></div>
+        <div class="msg" id="exMsg"></div>
+      </section>
+    </aside>
+  </main>
+</div>
+<div class="drop" id="drop" hidden>Отпусти картинку</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="lib/imagetracer_v1.2.6.js"></script>
+<script id="core">
+/* ===== Ядро: анализ, палитра, трассировка, фигуры, экспорт. Без DOM. ===== */
+var VCore = (function(){
+  function rng(seed){ return function(){ seed = (seed*1664525+1013904223)>>>0; return seed/4294967296; }; }
+  function hex(c){ return '#'+[c.r,c.g,c.b].map(function(v){return ('0'+Math.max(0,Math.min(255,Math.round(v))).toString(16)).slice(-2);}).join(''); }
+  function parseHex(h){ return {r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)}; }
+
+  var labCache=new Map();
+  function lab(h){
+    var c=labCache.get(h); if(c) return c;
+    var p=parseHex(h), f=function(v){ v/=255; return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4); };
+    var r=f(p.r),g=f(p.g),b=f(p.b);
+    var x=(r*0.4124+g*0.3576+b*0.1805)/0.95047, y=r*0.2126+g*0.7152+b*0.0722, z=(r*0.0193+g*0.1192+b*0.9505)/1.08883;
+    var t=function(v){ return v>0.008856?Math.cbrt(v):7.787*v+16/116; };
+    var fx=t(x),fy=t(y),fz=t(z);
+    c=[116*fy-16,500*(fx-fy),200*(fy-fz)]; labCache.set(h,c); return c;
+  }
+  function dE(a,b){ if(a===b) return 0; var A=lab(a),B=lab(b); return Math.hypot(A[0]-B[0],A[1]-B[1],A[2]-B[2]); }
+
+  function normalizeAlpha(imgd){
+    var d=imgd.data, transparent=0;
+    for(var i=0;i<d.length;i+=4){ if(d[i+3]<128){d[i]=d[i+1]=d[i+2]=d[i+3]=0;transparent++;} else d[i+3]=255; }
+    return transparent/(d.length/4);
+  }
+  function samplePixels(imgd, max){
+    var d=imgd.data, n=d.length/4, step=Math.max(1,Math.floor(n/max)), out=[];
+    for(var p=0;p<n;p+=step){ var i=p*4; if(d[i+3]) out.push(d[i],d[i+1],d[i+2]); }
+    return out;
+  }
+  function analyze(imgd){
+    var px=samplePixels(imgd,60000), m=px.length/3, bins=new Map();
+    for(var i=0;i<px.length;i+=3){ var k=(px[i]>>4)<<8|(px[i+1]>>4)<<4|(px[i+2]>>4); bins.set(k,(bins.get(k)||0)+1); }
+    var arr=[...bins.entries()].sort(function(a,b){return b[1]-a[1];});
+    var cover=0,n95=0; for(var j=0;j<arr.length;j++){ cover+=arr[j][1]; n95++; if(cover>=m*0.95) break; }
+    var centers=[];
+    arr.forEach(function(e){
+      if(e[1]<m*0.006) return;
+      var r=((e[0]>>8)&15)*16+8,g=((e[0]>>4)&15)*16+8,b=(e[0]&15)*16+8,hit=null;
+      for(var c of centers){ if(Math.hypot(c.r-r,c.g-g,c.b-b)<22){hit=c;break;} }
+      if(hit) hit.n+=e[1]; else centers.push({r:r,g:g,b:b,n:e[1]});
+    });
+    var major=Math.max(2,centers.length);
+    if(n95<=40) return {kind:'logo',colors:Math.min(12,major),n95:n95};
+    if(n95<=420) return {kind:'illu',colors:16,n95:n95};
+    return {kind:'photo',colors:32,n95:n95};
+  }
+  function kmeans(imgd,k){
+    var px=samplePixels(imgd,50000), m=px.length/3; if(!m) return [];
+    k=Math.min(k,m); var rand=rng(7), C=[], dist=new Float64Array(m);
+    var f=Math.floor(rand()*m); C.push([px[f*3],px[f*3+1],px[f*3+2]]);
+    while(C.length<k){
+      var sum=0, last=C[C.length-1];
+      for(var i=0;i<m;i++){ var dr=px[i*3]-last[0],dg=px[i*3+1]-last[1],db=px[i*3+2]-last[2],dd=dr*dr+dg*dg+db*db;
+        if(C.length===1||dd<dist[i]) dist[i]=dd; sum+=dist[i]; }
+      if(sum===0) break;
+      var t=rand()*sum, idx=0; for(;idx<m;idx++){ t-=dist[idx]; if(t<=0) break; }
+      idx=Math.min(idx,m-1); C.push([px[idx*3],px[idx*3+1],px[idx*3+2]]);
+    }
+    for(var it=0;it<14;it++){
+      var acc=C.map(function(){return [0,0,0,0];});
+      for(var p=0;p<m;p++){ var best=0,bd=1e12;
+        for(var c=0;c<C.length;c++){ var a=px[p*3]-C[c][0],b=px[p*3+1]-C[c][1],e=px[p*3+2]-C[c][2],q=a*a+b*b+e*e; if(q<bd){bd=q;best=c;} }
+        var A=acc[best]; A[0]+=px[p*3];A[1]+=px[p*3+1];A[2]+=px[p*3+2];A[3]++; }
+      C=C.map(function(c,i){ var A=acc[i]; return A[3]?[A[0]/A[3],A[1]/A[3],A[2]/A[3]]:c; });
+    }
+    return C.map(function(c){return {r:Math.round(c[0]),g:Math.round(c[1]),b:Math.round(c[2]),a:255};});
+  }
+  function otsu(imgd){
+    var h=new Array(256).fill(0),d=imgd.data,n=0;
+    for(var i=0;i<d.length;i+=4){ if(!d[i+3]) continue; h[Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2])]++; n++; }
+    var sum=0; for(var t=0;t<256;t++) sum+=t*h[t];
+    var sB=0,wB=0,best=0,th=128;
+    for(t=0;t<256;t++){ wB+=h[t]; if(!wB) continue; var wF=n-wB; if(!wF) break; sB+=t*h[t];
+      var mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)*(mB-mF); if(v>best){best=v;th=t;} }
+    return th;
+  }
+  function threshold(imgd,th){
+    var d=imgd.data;
+    for(var i=0;i<d.length;i+=4){ if(!d[i+3]) continue; var v=(.299*d[i]+.587*d[i+1]+.114*d[i+2])<th?0:255; d[i]=d[i+1]=d[i+2]=v; }
+  }
+
+  function toCmds(p){
+    var s=p.segments,out=[['M',s[0].x1,s[0].y1]];
+    s.forEach(function(g){ if(g.type==='L') out.push(['L',g.x2,g.y2]); else out.push(['Q',g.x2,g.y2,g.x3,g.y3]); });
+    return out;
+  }
+  // Трассировка → массив фигур {rings,d,base,color,hidden,bbox,area}
+  function trace(imgd,o){
+    var pal = o.mode==='bw' ? [{r:0,g:0,b:0,a:255},{r:255,g:255,b:255,a:255}] : kmeans(imgd,o.colors);
+    if(o.transparentShare>0.002) pal.push({r:0,g:0,b:0,a:0});
+    var lt=[5,3.5,2.5,1.8,1.4,1.1,.9,.7,.55,.4][o.detail-1];
+    var td=ImageTracer.imagedataToTracedata(imgd,{
+      ltres:lt,qtres:lt,pathomit:o.speck,rightangleenhance:true,
+      pal:pal.map(function(c){return Object.assign({},c);}),numberofcolors:pal.length,colorquantcycles:1,mincolorratio:0,
+      blurradius:o.smooth,blurdelta:o.smooth?40:20,layering:0,roundcoords:2,scale:1
+    });
+    var layers=[];
+    td.layers.forEach(function(layer,li){
+      var c=td.palette[li]; if(c.a<128) return;
+      var shapes=[],total=0;
+      layer.forEach(function(p){
+        if(p.isholepath||!p.segments.length) return;
+        var rings=[toCmds(p)];
+        p.holechildren.forEach(function(h){ if(layer[h]&&layer[h].segments.length) rings.push(toCmds(layer[h])); });
+        var sh=makeShape(rings,{r:c.r,g:c.g,b:c.b}); total+=sh.area; shapes.push(sh);
+      });
+      if(shapes.length) layers.push({total:total,shapes:shapes});
+    });
+    layers.sort(function(a,b){return b.total-a.total;});
+    var all=[]; layers.forEach(function(l){ l.shapes.forEach(function(s){ s.id=all.length; all.push(s); }); });
+    return {w:td.width,h:td.height,shapes:all};
+  }
+  function endPt(c){ return [c[c.length-2],c[c.length-1]]; }
+  function ringArea(r){ var a=0,p0=endPt(r[0]),px=p0[0],py=p0[1]; for(var i=1;i<r.length;i++){ var e=endPt(r[i]); a+=px*e[1]-e[0]*py; px=e[0];py=e[1]; } a+=px*p0[1]-p0[0]*py; return Math.abs(a)/2; }
+  function makeShape(rings,base,rule){
+    var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    rings.forEach(function(r){ r.forEach(function(c){ for(var i=1;i<c.length;i+=2){ if(c[i]<x0)x0=c[i]; if(c[i]>x1)x1=c[i]; if(c[i+1]<y0)y0=c[i+1]; if(c[i+1]>y1)y1=c[i+1]; } }); });
+    var area=ringArea(rings[0]); for(var i=1;i<rings.length;i++) area-=ringArea(rings[i]);
+    return {rings:rings,d:rings.map(ringD).join(''),base:base,color:hex(base),hidden:false,bbox:[x0,y0,x1,y1],area:Math.max(Math.abs(area),0.5),rule:rule||'evenodd'};
+  }
+  function r1(v){ return Math.round(v*100)/100; }
+  function ringD(ring){
+    return ring.map(function(c){ return c[0]+c.slice(1).map(r1).join(' '); }).join('')+'Z';
+  }
+  // Разбор атрибута d любого SVG-пути в абсолютные команды M/L/Q/C
+  function parseD(d){
+    var toks=d.match(/[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[], i=0, rings=[], ring=null, cmd='', x=0,y=0,sx=0,sy=0,lc=null,lq=null;
+    function num(){ return parseFloat(toks[i++]); }
+    function isNum(){ return i<toks.length && !/^[A-Za-z]$/.test(toks[i]); }
+    while(i<toks.length){
+      if(/^[A-Za-z]$/.test(toks[i])) cmd=toks[i++];
+      var rel=cmd===cmd.toLowerCase(), C=cmd.toUpperCase();
+      if(C==='Z'){ if(ring){ rings.push(ring); ring=null; } x=sx;y=sy; lc=lq=null; continue; }
+      if(!isNum()) { i++; continue; }
+      if(C==='M'){ if(ring) rings.push(ring); x=(rel?x:0)+num(); y=(rel?y:0)+num(); sx=x;sy=y; ring=[['M',x,y]]; cmd=rel?'l':'L'; lc=lq=null; continue; }
+      if(!ring){ ring=[['M',x,y]]; }
+      if(C==='L'){ x=(rel?x:0)+num(); y=(rel?y:0)+num(); ring.push(['L',x,y]); lc=lq=null; }
+      else if(C==='H'){ x=(rel?x:0)+num(); ring.push(['L',x,y]); lc=lq=null; }
+      else if(C==='V'){ y=(rel?y:0)+num(); ring.push(['L',x,y]); lc=lq=null; }
+      else if(C==='C'||C==='S'){
+        var x1,y1; if(C==='C'){ x1=(rel?x:0)+num(); y1=(rel?y:0)+num(); } else { x1=lc?2*x-lc[0]:x; y1=lc?2*y-lc[1]:y; }
+        var x2=(rel?x:0)+num(), y2=(rel?y:0)+num(), ex=(rel?x:0)+num(), ey=(rel?y:0)+num();
+        ring.push(['C',x1,y1,x2,y2,ex,ey]); lc=[x2,y2]; lq=null; x=ex;y=ey;
+      } else if(C==='Q'||C==='T'){
+        var qx,qy; if(C==='Q'){ qx=(rel?x:0)+num(); qy=(rel?y:0)+num(); } else { qx=lq?2*x-lq[0]:x; qy=lq?2*y-lq[1]:y; }
+        var ex2=(rel?x:0)+num(), ey2=(rel?y:0)+num();
+        ring.push(['Q',qx,qy,ex2,ey2]); lq=[qx,qy]; lc=null; x=ex2;y=ey2;
+      } else if(C==='A'){ num();num();num();num();num(); x=(rel?x:0)+num(); y=(rel?y:0)+num(); ring.push(['L',x,y]); lc=lq=null; }
+      else i++;
+    }
+    if(ring) rings.push(ring);
+    return rings.filter(function(r){ return r.length>1; });
+  }
+  // SVG от VTracer -> модель фигур (порядок сохраняется: в «стопке» он важен)
+  function fromSVG(svg){
+    var mw=svg.match(/<svg[^>]*\swidth="([\d.]+)"/), mh=svg.match(/<svg[^>]*\sheight="([\d.]+)"/);
+    var shapes=[], re=/<path\b([^>]*)\/?>/g, m;
+    while((m=re.exec(svg))){
+      var a=m[1], d=(a.match(/\sd="([^"]*)"/)||[])[1], f=(a.match(/fill="(#[0-9a-fA-F]{6})"/)||[])[1];
+      if(!d||!f) continue;
+      var t=a.match(/translate\(([-\d.]+)[ ,]+([-\d.]+)\)/), rings=parseD(d);
+      if(t){ var tx=+t[1],ty=+t[2]; rings.forEach(function(r){ r.forEach(function(c){ for(var i=1;i<c.length;i+=2){ c[i]+=tx; c[i+1]+=ty; } }); }); }
+      if(!rings.length) continue;
+      var sh=makeShape(rings,parseHex(f.toLowerCase()),'nonzero'); sh.id=shapes.length; shapes.push(sh);
+    }
+    return {w:mw?+mw[1]:0,h:mh?+mh[1]:0,shapes:shapes};
+  }
+  // Видимые фигуры, сгруппированные по цвету
+  function groups(shapes){
+    var out=[], last=null;
+    shapes.forEach(function(s){ if(s.hidden) return; if(!last||last.hex!==s.color||last.rule!==s.rule){ last={hex:s.color,color:parseHex(s.color),rule:s.rule||'evenodd',shapes:[]}; out.push(last); } last.shapes.push(s); });
+    return out;
+  }
+  function toSVG(shapes,w,h,o){
+    o=o||{}; var s='', stroke=o.style==='stroke';
+    groups(shapes).forEach(function(g){
+      if(o.outline) s+='<g fill="none" stroke="'+o.outline+'" stroke-width="1" vector-effect="non-scaling-stroke">';
+      else if(stroke) s+='<g fill="none" stroke="'+g.hex+'" stroke-width="'+(o.strokeW||1)+'" stroke-linejoin="round">';
+      else s+='<g fill="'+g.hex+'"'+(o.seams?' stroke="'+g.hex+'" stroke-width="0.6" stroke-linejoin="round"':'')+' fill-rule="'+g.rule+'">';
+      g.shapes.forEach(function(sh){ s+='<path d="'+sh.d+'"/>'; });
+      s+='</g>';
+    });
+    var size=o.fluid?'width="100%" height="100%" preserveAspectRatio="none"':'width="'+o.width+'" height="'+o.height+'"';
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+w+' '+h+'" '+size+'>'+s+'</svg>';
+  }
+  function walk(ring,k,flipH,emit){
+    var x=0,y=0;
+    ring.forEach(function(c){
+      if(c[0]==='M'){ x=c[1];y=c[2]; emit('M',[x*k,flipH-y*k]); }
+      else if(c[0]==='L'){ x=c[1];y=c[2]; emit('L',[x*k,flipH-y*k]); }
+      else if(c[0]==='C'){ emit('C',[c[1]*k,flipH-c[2]*k,c[3]*k,flipH-c[4]*k,c[5]*k,flipH-c[6]*k],[x,y,c[1],c[2],c[3],c[4],c[5],c[6]]); x=c[5];y=c[6]; }
+      else { var qx=c[1],qy=c[2],ex=c[3],ey=c[4];
+        var c1x=x+2/3*(qx-x),c1y=y+2/3*(qy-y),c2x=ex+2/3*(qx-ex),c2y=ey+2/3*(qy-ey);
+        emit('C',[c1x*k,flipH-c1y*k,c2x*k,flipH-c2y*k,ex*k,flipH-ey*k],[x,y,qx,qy,ex,ey]); x=ex;y=ey; }
+    });
+  }
+  function f2(v){ return (Math.round(v*100)/100).toString(); }
+  function vecOps(shapes,k,H,ops,o){
+    var out=[];
+    groups(shapes).forEach(function(g){
+      var nz=g.rule==='nonzero', paint=o.style==='stroke'?ops.stroke:(o.seams?(nz?ops.fillStrokeNZ:ops.fillStroke):(nz?ops.fillNZ:ops.fill));
+      var c=g.color; out.push(ops.color(c.r/255,c.g/255,c.b/255));
+      g.shapes.forEach(function(sh){
+        sh.rings.forEach(function(ring){ walk(ring,k,H,function(t,a){ out.push(a.map(f2).join(' ')+' '+ops[t]); }); out.push(ops.Z); });
+        out.push(paint);
+      });
+    });
+    return out.join('\n');
+  }
+  function lineW(o,k){ return o.style==='stroke'?(o.strokeW||1)*k:0.6*k; }
+  function toPDF(shapes,w,h,W,H,o){
+    var k=W/w;
+    var body='q '+f2(lineW(o,k))+' w 1 j\n'+vecOps(shapes,k,H,{
+      color:function(r,g,b){ var s=[r,g,b].map(f2).join(' '); return s+' rg '+s+' RG'; },
+      M:'m',L:'l',C:'c',Z:'h',fill:'f*',fillStroke:'B*',fillNZ:'f',fillStrokeNZ:'B',stroke:'S'},o)+'\nQ';
+    var objs=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+f2(W)+' '+f2(H)+'] /Contents 4 0 R /Resources << >> >>',
+      '<< /Length '+body.length+' >>\nstream\n'+body+'\nendstream'];
+    var pdf='%PDF-1.4\n',offs=[];
+    objs.forEach(function(ob,i){ offs.push(pdf.length); pdf+=(i+1)+' 0 obj\n'+ob+'\nendobj\n'; });
+    var x=pdf.length; pdf+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
+    offs.forEach(function(of){ pdf+=('000000000'+of).slice(-10)+' 00000 n \n'; });
+    return pdf+'trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+x+'\n%%EOF';
+  }
+  function toEPS(shapes,w,h,W,H,o){
+    var k=W/w;
+    return '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 '+Math.ceil(W)+' '+Math.ceil(H)+'\n%%HiResBoundingBox: 0 0 '+f2(W)+' '+f2(H)+
+      '\n%%Creator: Vectorizer\n%%EndComments\ngsave\n'+f2(lineW(o,k))+' setlinewidth 1 setlinejoin\nnewpath\n'+
+      vecOps(shapes,k,H,{color:function(r,g,b){return [r,g,b].map(f2).join(' ')+' setrgbcolor';},
+        M:'moveto',L:'lineto',C:'curveto',Z:'closepath',fill:'eofill newpath',fillStroke:'gsave eofill grestore stroke newpath',fillNZ:'fill newpath',fillStrokeNZ:'gsave fill grestore stroke newpath',stroke:'stroke newpath'},o)+
+      '\ngrestore\nshowpage\n%%EOF\n';
+  }
+  var ACI=[[1,255,0,0],[2,255,255,0],[3,0,255,0],[4,0,255,255],[5,0,0,255],[6,255,0,255],[7,0,0,0],[8,128,128,128],[9,192,192,192],[30,255,127,0],[250,51,51,51],[254,255,255,255]];
+  function aci(c){ var b=7,bd=1e9; ACI.forEach(function(a){ var d=(a[1]-c.r)**2+(a[2]-c.g)**2+(a[3]-c.b)**2; if(d<bd){bd=d;b=a[0];} }); return b; }
+  function toDXF(shapes,w,h,W,H){
+    var k=W/w, o=['0','SECTION','2','ENTITIES'];
+    groups(shapes).forEach(function(g){
+      var layer='C_'+g.hex.slice(1).toUpperCase(), col=aci(g.color);
+      g.shapes.forEach(function(sh){ sh.rings.forEach(function(ring){
+        var pts=[];
+        walk(ring,1,0,function(t,a,q){
+          if(t!=='C'){ pts.push([a[0],-a[1]]); return; }
+          for(var s=1;s<=6;s++){ var u=s/6,v=1-u;
+            if(q.length===8) pts.push([v*v*v*q[0]+3*v*v*u*q[2]+3*v*u*u*q[4]+u*u*u*q[6], v*v*v*q[1]+3*v*v*u*q[3]+3*v*u*u*q[5]+u*u*u*q[7]]);
+            else pts.push([v*v*q[0]+2*v*u*q[2]+u*u*q[4], v*v*q[1]+2*v*u*q[3]+u*u*q[5]]); }
+        });
+        o.push('0','POLYLINE','8',layer,'62',String(col),'66','1','70','1');
+        pts.forEach(function(p){ o.push('0','VERTEX','8',layer,'10',f2(p[0]*k),'20',f2(H-p[1]*k),'30','0'); });
+        o.push('0','SEQEND','8',layer);
+      }); });
+    });
+    o.push('0','ENDSEC','0','EOF');
+    return o.join('\n')+'\n';
+  }
+  var CRC=(function(){ var t=new Uint32Array(256); for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+  function crc32(u){ var c=0xFFFFFFFF; for(var i=0;i<u.length;i++) c=CRC[(c^u[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+  function zip(files){
+    var enc=new TextEncoder(), parts=[], central=[], off=0;
+    files.forEach(function(f){
+      var name=enc.encode(f.name), data=typeof f.data==='string'?enc.encode(f.data):f.data, crc=crc32(data);
+      var h=new DataView(new ArrayBuffer(30));
+      h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(12,0x21,true);
+      h.setUint32(14,crc,true);h.setUint32(18,data.length,true);h.setUint32(22,data.length,true);h.setUint16(26,name.length,true);
+      parts.push(new Uint8Array(h.buffer),name,data);
+      var c=new DataView(new ArrayBuffer(46));
+      c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(14,0x21,true);
+      c.setUint32(16,crc,true);c.setUint32(20,data.length,true);c.setUint32(24,data.length,true);c.setUint16(28,name.length,true);c.setUint32(42,off,true);
+      central.push(new Uint8Array(c.buffer),name);
+      off+=30+name.length+data.length;
+    });
+    var cs=central.reduce(function(a,b){return a+b.length;},0), e=new DataView(new ArrayBuffer(22));
+    e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
+    return new Blob(parts.concat(central,[new Uint8Array(e.buffer)]));
+  }
+  // Кодирование id фигуры в цвет для карты попаданий (биекция по модулю 2^24)
+  function idCode(i){ return Math.imul(i+1,0x9E3779B1)&0xFFFFFF; }
+  // Соседство фигур по карте id
+  function adjacency(idm,w,h,n){
+    var seen=new Set(), adj=new Array(n);
+    for(var i=0;i<n;i++) adj[i]=[];
+    function link(a,b){ if(a<0||b<0||a===b) return; var key=a<b?a*n+b:b*n+a; if(seen.has(key)) return; seen.add(key); adj[a].push(b); adj[b].push(a); }
+    for(var y=0;y<h;y++){ for(var x=0;x<w;x++){ var p=y*w+x,a=idm[p]; if(a<0) continue;
+      if(x+1<w) link(a,idm[p+1]); if(x+2<w) link(a,idm[p+2]);
+      if(y+1<h) link(a,idm[p+w]); if(y+2<h) link(a,idm[p+2*w]); } }
+    return adj;
+  }
+  // Выбор фигур по области захвата
+  function scopeSet(shapes,adj,seed,scope,tol){
+    var base=shapes[seed].color, out=[];
+    if(scope==='shape') return [seed];
+    if(scope==='similar'){ shapes.forEach(function(s,i){ if(!s.hidden&&dE(s.color,base)<=tol) out.push(i); }); return out; }
+    var seen=new Uint8Array(shapes.length), q=[seed]; seen[seed]=1;
+    while(q.length){ var a=q.pop(); out.push(a);
+      adj[a].forEach(function(b){ if(seen[b]) return; seen[b]=1; var s=shapes[b]; if(!s.hidden&&dE(s.color,base)<=tol) q.push(b); }); }
+    return out;
+  }
+
+  return {analyze:analyze,normalizeAlpha:normalizeAlpha,otsu:otsu,threshold:threshold,trace:trace,toSVG:toSVG,toPDF:toPDF,toEPS:toEPS,toDXF:toDXF,
+    zip:zip,hex:hex,parseHex:parseHex,dE:dE,parseD:parseD,fromSVG:fromSVG,idCode:idCode,adjacency:adjacency,scopeSet:scopeSet,groups:groups};
+})();
+</script>
+<script>
+/* ===== Интерфейс ===== */
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var PRESETS={
+    logo:{mode:'color',colors:4,detail:7,smooth:0,speck:12},
+    illu:{mode:'color',colors:16,detail:6,smooth:0,speck:8},
+    photo:{mode:'color',colors:32,detail:4,smooth:1,speck:16},
+    bw:{mode:'bw',colors:2,detail:6,smooth:0,speck:10}
+  };
+  var S={locked:[],lockStrict:false,upscaleOn:true,neural:'auto',objOnly:false,srcVer:0,prep:null,srcEl:null,src:null,origW:0,origH:0,name:'primer',isSample:true,preset:'auto',opts:Object.assign({},PRESETS.illu),
+    thresh:128,autoInfo:null,T:null,sel:new Set(),undo:[],redo:[],
+    tool:'hand',scope:'connected',tol:14,selMode:'new',cur:'#e4572e',recent:[],
+    seams:true,style:'fill',strokeW:1,outW:0,unit:'px',
+    view:'compare',zoom:1,split:50,pngScale:2,ms:0,hover:-1};
+  var dl=null, timer=null, svgCache='', toastTimer=null, DESK=window.desktop||null;
+  var VT=!!(DESK&&DESK.vtrace);
+  // настройки для движка VTracer: merge — выравнивание цвета, detail — мелкие детали, smooth — сглаживание кривых
+  var PRESETS_VT={
+    logo:{mode:'color',colors:64,merge:6,detail:7,smooth:1,speck:2},
+    illu:{mode:'color',colors:64,merge:4,detail:7,smooth:1,speck:2},
+    photo:{mode:'color',colors:48,merge:2,detail:5,smooth:2,speck:4},
+    bw:{mode:'bw',colors:2,merge:6,detail:7,smooth:1,speck:2}
+  };
+  if(VT) PRESETS=PRESETS_VT;
+
+  try{ var sv=JSON.parse(localStorage.getItem('vz-prefs')||'null'); if(sv){ ['view','seams','pngScale','scope','tol','style','strokeW','unit','recent','cur','locked','lockStrict','upscaleOn','neural'].forEach(function(k){ if(sv[k]!==undefined) S[k]=sv[k]; }); if(sv.neural===undefined&&sv.upscaleOn===false) S.neural='off'; } }catch(e){}
+  if(S.view==='original') S.view='compare';
+  function savePrefs(){ try{ localStorage.setItem('vz-prefs',JSON.stringify({locked:S.locked,lockStrict:S.lockStrict,neural:S.neural,view:S.view,seams:S.seams,pngScale:S.pngScale,scope:S.scope,tol:S.tol,style:S.style,strokeW:S.strokeW,unit:S.unit,recent:S.recent,cur:S.cur})); }catch(e){} }
+  function toast(t){ var el=$('toast'); el.textContent=t; el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(function(){ el.hidden=true; },1800); }
+
+  /* ---------- загрузка ---------- */
+  function sampleCanvas(){
+    var c=document.createElement('canvas'); c.width=720; c.height=480; var g=c.getContext('2d');
+    g.fillStyle='#d9ecf7'; g.fillRect(0,0,720,480);
+    g.fillStyle='#f6b93b'; g.beginPath(); g.arc(540,140,72,0,7); g.fill();
+    g.fillStyle='#fff3d1'; g.beginPath(); g.arc(540,140,40,0,7); g.fill();
+    g.fillStyle='#3d6b8e'; g.beginPath(); g.moveTo(0,480); g.lineTo(0,330); g.lineTo(150,190); g.lineTo(260,300); g.lineTo(380,170); g.lineTo(560,360); g.lineTo(720,260); g.lineTo(720,480); g.fill();
+    g.fillStyle='#f2f6f9'; g.beginPath(); g.moveTo(150,190); g.lineTo(196,233); g.lineTo(170,226); g.lineTo(150,246); g.lineTo(128,223); g.lineTo(108,229); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(380,170); g.lineTo(432,224); g.lineTo(404,214); g.lineTo(384,236); g.lineTo(360,212); g.lineTo(336,218); g.closePath(); g.fill();
+    g.fillStyle='#22415a'; g.beginPath(); g.moveTo(0,480); g.lineTo(0,400); g.bezierCurveTo(140,340,260,420,380,380); g.bezierCurveTo(500,340,620,390,720,350); g.lineTo(720,480); g.fill();
+    g.strokeStyle='#22415a'; g.lineWidth=7; g.lineCap='round';
+    [[230,110],[290,80]].forEach(function(p){ g.beginPath(); g.moveTo(p[0]-26,p[1]); g.quadraticCurveTo(p[0]-12,p[1]-16,p[0],p[1]); g.quadraticCurveTo(p[0]+12,p[1]-16,p[0]+26,p[1]); g.stroke(); });
+    return c;
+  }
+  function setSource(el,displayUrl,w,h,name,isSample){
+    S.srcEl=el; S.origW=w; S.origH=h; S.name=name; S.isSample=isSample; S.outW=S.unit==='mm'?Math.round(w*25.4/96):w;
+    var max=VT?4000:1200, k=Math.min(1,max/Math.max(w,h));
+    if(!VT&&Math.max(w,h)<500) k=Math.min(3,600/Math.max(w,h));
+    S.srcVer++; S.prep=null;
+    var tw=Math.max(1,Math.round(w*k)), th=Math.max(1,Math.round(h*k));
+    var c=document.createElement('canvas'); c.width=tw; c.height=th;
+    var g=c.getContext('2d',{willReadFrequently:true}); g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high'; g.drawImage(el,0,0,tw,th);
+    S.src=g.getImageData(0,0,tw,th);
+    S.transparentShare=VCore.normalizeAlpha(S.src);
+    S.autoInfo=VCore.analyze(S.src);
+    S.thresh=VCore.otsu(S.src);
+    S.undo=[]; S.redo=[]; S.sel.clear(); S.T=null;
+    $('orig').src=displayUrl; $('canvas').classList.toggle('pixel',k>1.5);
+    applyPreset(S.preset==='custom'?'auto':S.preset,true);
+  }
+  function loadFile(file){
+    if(!file||!/^image\//.test(file.type)){ showMsg('Нужен файл изображения: PNG, JPG, WebP, GIF или BMP.',true); return; }
+    var url=URL.createObjectURL(file), img=new Image();
+    img.onload=function(){ setSource(img,url,img.naturalWidth,img.naturalHeight,file.name.replace(/\.[^.]+$/,'')||'image',false); };
+    img.onerror=function(){ showMsg('Не получилось открыть файл. Попробуй PNG или JPG.',true); };
+    img.src=url;
+  }
+  function transformSource(kind){
+    if(!S.srcEl) return;
+    var w=S.origW,h=S.origH,c=document.createElement('canvas'),g;
+    if(kind==='flip'){ c.width=w;c.height=h; g=c.getContext('2d'); g.translate(w,0); g.scale(-1,1); g.drawImage(S.srcEl,0,0,w,h); }
+    else { c.width=h;c.height=w; g=c.getContext('2d'); g.translate(h/2,w/2); g.rotate(kind==='r'?Math.PI/2:-Math.PI/2); g.drawImage(S.srcEl,-w/2,-h/2,w,h); }
+    c.toBlob(function(b){ setSource(c,URL.createObjectURL(b),c.width,c.height,S.name,S.isSample); },'image/png');
+  }
+
+  /* ---------- пресеты и настройки ---------- */
+  function applyPreset(p,fromLoad){
+    S.preset=p; var o;
+    if(p==='auto'){
+      var a=S.autoInfo||{kind:'illu',colors:16};
+      o=Object.assign({},PRESETS[a.kind]); if(!VT) o.colors=a.colors;
+      var names={logo:'логотип или иконка',illu:'иллюстрация',photo:'фото или сложная картинка'};
+      $('autoMsg').textContent='Похоже на: '+names[a.kind]+(VT?'.':'. Цветов: '+o.colors+'.');
+    } else { o=Object.assign({},PRESETS[p]); $('autoMsg').textContent=''; }
+    S.opts=o;
+    if(o.mode==='bw') S.thresh=VCore.otsu(S.src);
+    syncControls(); retrace(fromLoad?0:60);
+  }
+  function setPressed(box,attr,val){ [].forEach.call($(box).querySelectorAll('button'),function(b){ b.setAttribute('aria-pressed',String(b.dataset[attr]===String(val))); }); }
+  function outDims(){
+    var W=S.outW>0?S.outW:S.origW, H=W*S.origH/S.origW;
+    return {W:W,H:H};
+  }
+  function syncControls(){
+    var o=S.opts;
+    setPressed('presets','p',S.preset);
+    $('colors').value=o.colors; $('oColors').textContent=o.colors;
+    $('detail').value=o.detail; $('oDetail').textContent=o.detail+' / 10';
+    $('smooth').value=o.smooth; $('oSmooth').textContent=VT?['нет','слабое','обычное','сильное','очень сильное','максимум'][o.smooth]:(o.smooth?o.smooth+' px':'выкл');
+    if(VT){ $('merge').value=o.merge||4; $('oMerge').textContent=(o.merge||4)+' / 10'; if(o.colors>=64) $('oColors').textContent='без ограничения'; }
+    $('speck').value=o.speck; $('oSpeck').textContent=o.speck?'< '+o.speck+' px':'выкл';
+    $('thresh').value=S.thresh; $('oThresh').textContent=S.thresh;
+    $('fColors').hidden=o.mode==='bw'; $('fThresh').hidden=o.mode!=='bw';
+    $('seams').checked=S.seams; $('seams').disabled=S.style==='stroke';
+    if(VT){ setPressed('neural','n',S.neural); $('objOnly').checked=S.objOnly; $('lockStrict').checked=S.lockStrict; renderLocks(); }
+    setPressed('style','st',S.style); $('fStroke').hidden=S.style!=='stroke';
+    $('strokeW').value=S.strokeW; $('oStroke').textContent=S.strokeW+' px';
+    setPressed('unit','u',S.unit);
+    if(document.activeElement!==$('outW')) $('outW').value=Math.round(S.outW*100)/100;
+    var d=outDims(); $('oOutH').textContent='× '+(Math.round(d.H*10)/10)+' '+(S.unit==='mm'?'мм':'px');
+    $('pngScale').value=S.pngScale; $('oPng').textContent=S.pngScale+'× · '+(Math.min(8000,S.origW*S.pngScale))+'×'+Math.round(Math.min(8000,S.origW*S.pngScale)*S.origH/S.origW);
+    $('pngLbl').textContent=S.pngScale+'×';
+    setPressed('scope','s',S.scope); setPressed('selmode','m',S.selMode);
+    $('tol').value=S.tol; $('oTol').textContent=S.tol;
+    $('scopeHint').textContent={shape:'Одна фигура под курсором.',connected:'Фигура и все соседние с похожим оттенком — как «волшебная палочка».',similar:'Все фигуры похожего оттенка по всей картинке.'}[S.scope];
+    renderCur();
+  }
+  function onSlider(){
+    S.opts.colors=+$('colors').value; S.opts.detail=+$('detail').value; S.opts.smooth=+$('smooth').value; S.opts.speck=+$('speck').value;
+    if(VT) S.opts.merge=+$('merge').value;
+    S.thresh=+$('thresh').value;
+    if(S.preset!=='bw'){ S.preset='custom'; $('autoMsg').textContent='Свои настройки.'; }
+    syncControls(); retrace(300);
+  }
+
+  /* ---------- трассировка ---------- */
+  function retrace(delay){
+    clearTimeout(timer); $('busy').hidden=false; $('busyText').textContent='Векторизую…';
+    timer=setTimeout(function(){ requestAnimationFrame(function(){ setTimeout(run,0); }); },delay||0);
+  }
+  function run(){
+    if(VT){ runVT(); return; }
+    var t0=performance.now();
+    var img=new ImageData(new Uint8ClampedArray(S.src.data),S.src.width,S.src.height);
+    var o=Object.assign({transparentShare:S.transparentShare},S.opts);
+    if(o.mode==='bw') VCore.threshold(img,S.thresh);
+    var model;
+    try{ model=VCore.trace(img,o); }
+    catch(e){ $('busy').hidden=true; showMsg('Ошибка векторизации: '+e.message,true); flushWaiters(); return; }
+    if(S.T) pushUndo();
+    if(o.mode==='bw') model.shapes.forEach(function(s){ if(s.base.r>200) s.hidden=true; });
+    var T={w:model.w,h:model.h,shapes:model.shapes,idm:null,adj:null,
+      meta:{opts:Object.assign({},S.opts),preset:S.preset,thresh:S.thresh,autoMsg:$('autoMsg').textContent}};
+    buildIdMap(T);
+    T.total=T.shapes.reduce(function(a,s){return a+s.area;},0);
+    S.T=T; S.ms=performance.now()-t0; S.sel.clear(); S.hover=-1;
+    $('busy').hidden=true;
+    renderAll(); flushWaiters();
+  }
+  /* ---- движок VTracer: подготовка (увеличение), выравнивание цвета и трассировка в фоне ---- */
+  function imgToCanvas(im){ var c=document.createElement('canvas'); c.width=im.width; c.height=im.height; c.getContext('2d').putImageData(im,0,0); return c; }
+  function canvasData(c){ return c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,c.width,c.height); }
+  function scaleCanvas(src,w,h){ var c=document.createElement('canvas'); c.width=Math.round(w); c.height=Math.round(h); var g=c.getContext('2d'); g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high'; g.drawImage(src,0,0,c.width,c.height); return c; }
+  // Цвет-«ключ» для фона: самый далёкий от цветов объекта. Фигуры этого цвета после трассировки скрываются.
+  var KEYS=[[255,0,255],[0,255,0],[0,255,255],[255,255,0],[255,0,0],[0,0,255]];
+  function pickKey(d,bg){
+    var best=KEYS[0],bd=-1,n=d.length/4,step=Math.max(1,Math.floor(n/30000));
+    KEYS.forEach(function(k){ var mn=1e9; for(var p=0;p<n;p+=step){ if(bg[p]) continue; var i=p*4,dr=d[i]-k[0],dg=d[i+1]-k[1],db=d[i+2]-k[2],v=dr*dr+dg*dg+db*db; if(v<mn) mn=v; } if(mn>bd){ bd=mn; best=k; } });
+    return best;
+  }
+  // BiRefNet находит границу главного объекта; возвращает маску (белое — объект)
+  async function neuralMask(c){
+    var N=1024, inp=document.createElement('canvas'); inp.width=inp.height=N; var g=inp.getContext('2d',{willReadFrequently:true});
+    g.fillStyle='#fff'; g.fillRect(0,0,N,N); g.imageSmoothingQuality='high'; g.drawImage(c,0,0,N,N);
+    var px=g.getImageData(0,0,N,N).data, data=new Float32Array(3*N*N), mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225], i, ch;
+    for(i=0;i<N*N;i++) for(ch=0;ch<3;ch++) data[ch*N*N+i]=(px[i*4+ch]/255-mean[ch])/std[ch];
+    var r=await DESK.ort('birefnet',{image:{data:data,dims:[1,3,N,N]}});
+    var o=r.data, dm=r.dims, oh=dm[dm.length-2], ow=dm[dm.length-1], mn=Infinity, mx=-Infinity;
+    for(i=0;i<ow*oh;i++){ if(o[i]<mn) mn=o[i]; if(o[i]>mx) mx=o[i]; }
+    var sig=mn<-0.01||mx>1.01, mc=document.createElement('canvas'); mc.width=ow; mc.height=oh;
+    var mg=mc.getContext('2d'), md=mg.createImageData(ow,oh);
+    for(i=0;i<ow*oh;i++){ var v=sig?1/(1+Math.exp(-o[i])):o[i], a=Math.max(0,Math.min(255,Math.round(v*255))); md.data[i*4]=md.data[i*4+1]=md.data[i*4+2]=a; md.data[i*4+3]=255; }
+    mg.putImageData(md,0,0); return mc;
+  }
+  async function prepared(){
+    var key=S.srcVer+'|'+S.neural+'|'+S.objOnly;
+    if(S.prep&&S.prep.key===key) return S.prep;
+    var src=S.src, w0=src.width, h0=src.height, long=Math.max(w0,h0), how=[], p, i;
+    var hasT=S.transparentShare>0.002;
+    // исходник без прозрачности (на белом) — для нейросетей
+    var rgb=document.createElement('canvas'); rgb.width=w0; rgb.height=h0; var rg=rgb.getContext('2d',{willReadFrequently:true});
+    rg.fillStyle='#fff'; rg.fillRect(0,0,w0,h0); rg.drawImage(imgToCanvas(src),0,0);
+    // маска объекта: прозрачность исходника и/или нейросеть
+    var maskC=null;
+    if(hasT){ maskC=document.createElement('canvas'); maskC.width=w0; maskC.height=h0; var mg=maskC.getContext('2d'), md=mg.createImageData(w0,h0), sd=src.data;
+      for(p=0;p<w0*h0;p++){ var a=sd[p*4+3]; md.data[p*4]=md.data[p*4+1]=md.data[p*4+2]=a; md.data[p*4+3]=255; } mg.putImageData(md,0,0); }
+    if(S.objOnly&&DESK.ort){
+      try{ if(await DESK.canCutout()){
+        $('busyText').textContent='Нейросеть отделяет объект от фона…';
+        var nm=await neuralMask(rgb);
+        if(!maskC){ maskC=document.createElement('canvas'); maskC.width=w0; maskC.height=h0; var g0=maskC.getContext('2d'); g0.fillStyle='#fff'; g0.fillRect(0,0,w0,h0); }
+        var gm=maskC.getContext('2d'); gm.globalCompositeOperation='multiply'; gm.imageSmoothingQuality='high'; gm.drawImage(nm,0,0,w0,h0); gm.globalCompositeOperation='source-over';
+        how.push('объект отделён нейросетью');
+      } else how.push('для «Только объект» скачай набор «Фон и лишние предметы»'); }catch(e){ console.warn('birefnet',e); how.push('фон отделить не получилось'); }
+    }
+    // увеличение и очистка краёв нейросетью
+    var c=rgb, want=S.neural!=='off'&&(long<1500||S.neural==='always');
+    if(want){
+      var done=false;
+      if(DESK.upscale){
+        try{ if(await DESK.canUpscale()){
+          $('busyText').textContent='Нейросеть увеличивает и чистит края…';
+          var pre=long>2000?scaleCanvas(rgb,w0*2000/long,h0*2000/long):rgb;
+          var blob=await new Promise(function(r){ pre.toBlob(r,'image/png'); });
+          var out=await DESK.upscale(new Uint8Array(await blob.arrayBuffer()),'art');
+          var bmp=await createImageBitmap(new Blob([out],{type:'image/png'}));
+          if(bmp.width>=pre.width*1.5){ var k=Math.min(1,3200/Math.max(bmp.width,bmp.height)); c=scaleCanvas(bmp,bmp.width*k,bmp.height*k); done=true; how.unshift('увеличено нейросетью'); }
+        } }catch(e){ console.warn('upscale',e); }
+      }
+      if(!done&&long<1500){ var f=Math.min(4,Math.ceil(1600/long)); c=scaleCanvas(rgb,w0*f,h0*f); how.unshift('×'+f); }
+    }
+    var img=canvasData(c), keyC=null, bg=null;
+    if(maskC){
+      var mm=scaleCanvas(maskC,c.width,c.height), mdd=canvasData(mm).data, d=img.data, n=c.width*c.height, cnt=0;
+      bg=new Uint8Array(n); for(p=0;p<n;p++){ if(mdd[p*4]<128){ bg[p]=1; cnt++; } }
+      if(cnt>0&&cnt<n){ keyC=pickKey(d,bg); for(p=0;p<n;p++) if(bg[p]){ i=p*4; d[i]=keyC[0]; d[i+1]=keyC[1]; d[i+2]=keyC[2]; d[i+3]=255; } }
+      else bg=null;
+    }
+    S.prep={key:key,img:img,how:how.join(', '),bg:keyC?bg:null,key3:keyC,keyHex:keyC?VCore.hex({r:keyC[0],g:keyC[1],b:keyC[2]}):null};
+    return S.prep;
+  }
+  if(VT&&DESK.onVtraceProgress) DESK.onVtraceProgress(function(t){ if(!$('busy').hidden) $('busyText').textContent=t; });
+  async function runVT(){
+    var t0=performance.now(), o=S.opts;
+    try{
+      $('busyText').textContent='Готовлю картинку…';
+      var pr=await prepared(), img=pr.img;
+      if(o.mode==='bw'){ img=new ImageData(new Uint8ClampedArray(img.data),img.width,img.height); VCore.threshold(img,S.thresh);
+        if(pr.bg){ var dd=img.data,k3=pr.key3; for(var q=0;q<pr.bg.length;q++) if(pr.bg[q]){ dd[q*4]=k3[0]; dd[q*4+1]=k3[1]; dd[q*4+2]=k3[2]; } } }
+      var n=img.width*img.height, det=o.detail||7;
+      var vo={ merge:0.012+(o.merge||4)*0.0105, maxColors:o.mode==='bw'?0:(o.colors>=64?0:o.colors),
+        locked:(o.mode==='bw'?['#000000','#ffffff']:S.locked).concat(pr.keyHex?[pr.keyHex]:[]), strict:o.mode==='bw'?true:(S.lockStrict&&S.locked.length>0),
+        cleanup:det>=8?1:2, minArea:Math.max(6,Math.round(n*0.00002*Math.pow(1.45,7-det))), glyphs:true,
+        speckle:o.speck==null?2:Math.min(o.speck,8), corner:[45,60,60,70,85,110][Math.min(5,o.smooth|0)],
+        simplify:[0,0.6,1.0,1.5,2.0,2.5][Math.min(5,o.smooth|0)] };
+      var r=await DESK.vtrace(new Uint8Array(img.data.buffer.slice(0)),img.width,img.height,vo);
+      var model=VCore.fromSVG(r.svg); model.w=model.w||img.width; model.h=model.h||img.height;
+      if(S.T) pushUndo();
+      if(o.mode==='bw') model.shapes.forEach(function(sh){ if(sh.base.r>200&&sh.base.g>200&&sh.base.b>200) sh.hidden=true; });
+      if(pr.keyHex) model.shapes.forEach(function(sh){ if(VCore.dE(sh.color,pr.keyHex)<14){ sh.hidden=true; sh.keyBg=true; } });
+      var T={w:model.w,h:model.h,shapes:model.shapes,idm:null,adj:null,
+        meta:{opts:Object.assign({},S.opts),preset:S.preset,thresh:S.thresh,autoMsg:$('autoMsg').textContent}};
+      buildIdMap(T);
+      // доля площади — по видимым пикселям: в «стопке» фигуры перекрываются
+      var cnt=new Float64Array(T.shapes.length); for(var p=0;p<T.idm.length;p++){ var v=T.idm[p]; if(v>=0) cnt[v]++; }
+      T.shapes.forEach(function(sh,i){ sh.area=Math.max(cnt[i],0.5); });
+      T.total=T.shapes.reduce(function(a,sh){return a+sh.area;},0);
+      S.T=T; S.ms=performance.now()-t0; S.sel.clear(); S.hover=-1; S.lastPalette=r.palette; S.prepHow=pr.how;
+      $('busy').hidden=true; renderAll(); flushWaiters();
+    }catch(e){ $('busy').hidden=true; showMsg('Ошибка векторизации: '+(e.message||e),true); flushWaiters(); }
+  }
+  /* ---- свои цвета ---- */
+  function renderLocks(){
+    var box=$('lockList'); if(!box) return; box.textContent='';
+    S.locked.forEach(function(hx,i){ var el=document.createElement('span'); el.className='lock'; el.innerHTML='<i style="background:'+hx+'"></i>'+hx+'<button aria-label="Убрать '+hx+'">×</button>'; el.querySelector('button').onclick=function(){ S.locked.splice(i,1); savePrefs(); renderLocks(); retrace(200); }; box.append(el); });
+    $('lockCount').textContent=S.locked.length?S.locked.length+' цв.':'';
+  }
+  var waiters=[];
+  function flushWaiters(){ waiters.splice(0).forEach(function(f){ f(); }); }
+  function waitTrace(){ return new Promise(function(r){ waiters.push(r); }); }
+  function buildIdMap(T){
+    var c=document.createElement('canvas'); c.width=T.w; c.height=T.h;
+    var g=c.getContext('2d',{willReadFrequently:true}), dec=new Map();
+    T.shapes.forEach(function(s,i){
+      var code=VCore.idCode(i); dec.set(code,i);
+      s.p2d=new Path2D(s.d);
+      g.fillStyle='#'+('00000'+code.toString(16)).slice(-6); g.fill(s.p2d,'evenodd');
+    });
+    var d=g.getImageData(0,0,T.w,T.h).data, idm=new Int32Array(T.w*T.h);
+    for(var p=0,i=0;p<idm.length;p++,i+=4){ if(d[i+3]!==255){ idm[p]=-1; continue; } var v=dec.get(d[i]<<16|d[i+1]<<8|d[i+2]); idm[p]=v===undefined?-1:v; }
+    T.idm=idm; T.hitCtx=g;
+  }
+  function adjOf(T){ if(!T.adj) T.adj=VCore.adjacency(T.idm,T.w,T.h,T.shapes.length); return T.adj; }
+  function hit(x,y){
+    var T=S.T; if(!T) return -1;
+    var px=Math.floor(x),py=Math.floor(y); if(px<0||py<0||px>=T.w||py>=T.h) return -1;
+    var id=T.idm[py*T.w+px]; if(id>=0) return id;
+    for(var i=T.shapes.length-1;i>=0;i--){ var s=T.shapes[i], b=s.bbox;
+      if(x<b[0]-1||x>b[2]+1||y<b[1]-1||y>b[3]+1) continue;
+      if(T.hitCtx.isPointInPath(s.p2d,x,y,'evenodd')) return i; }
+    return -1;
+  }
+
+  /* ---------- история ---------- */
+  function snap(){ var T=S.T; return {T:T,colors:T.shapes.map(function(s){return s.color;}),hidden:T.shapes.map(function(s){return s.hidden;}),sel:[...S.sel]}; }
+  function pushUndo(){ S.undo.push(snap()); if(S.undo.length>60) S.undo.shift(); S.redo=[]; }
+  function restore(sn){
+    S.T=sn.T; sn.T.shapes.forEach(function(s,i){ s.color=sn.colors[i]; s.hidden=sn.hidden[i]; });
+    S.sel=new Set(sn.sel);
+    var m=sn.T.meta; S.opts=Object.assign({},m.opts); S.preset=m.preset; S.thresh=m.thresh; $('autoMsg').textContent=m.autoMsg;
+    clearTimeout(timer); $('busy').hidden=true; flushWaiters();
+    syncControls(); renderAll();
+  }
+  function undo(){ if(!S.undo.length) return; S.redo.push(snap()); restore(S.undo.pop()); toast('Отменено'); }
+  function redo(){ if(!S.redo.length) return; S.undo.push(snap()); restore(S.redo.pop()); toast('Повторено'); }
+  function edit(label,fn){ pushUndo(); fn(); renderAll(); if(label) toast(label); }
+
+  /* ---------- правка ---------- */
+  function useColor(h){ S.cur=h.toLowerCase(); S.recent=[S.cur].concat(S.recent.filter(function(c){return c!==S.cur;})).slice(0,12); savePrefs(); renderCur(); }
+  function renderCur(){
+    $('curChip').style.background=S.cur; $('curInput').value=S.cur; if(document.activeElement!==$('curHex')) $('curHex').value=S.cur;
+    var r=$('recent'); r.textContent='';
+    S.recent.forEach(function(c){ var b=document.createElement('button'); b.style.background=c; b.title=c; b.setAttribute('aria-label','Цвет '+c); b.onclick=function(){ S.cur=c; renderCur(); }; r.append(b); });
+  }
+  function scopeOf(id){ return VCore.scopeSet(S.T.shapes,S.scope==='connected'?adjOf(S.T):null,id,S.scope,S.tol); }
+  function applySel(ids,mode){
+    if(mode==='new') S.sel=new Set(ids);
+    else if(mode==='add') ids.forEach(function(i){ S.sel.add(i); });
+    else ids.forEach(function(i){ S.sel.delete(i); });
+    renderOverlay(); renderSelInfo();
+  }
+  function fillIds(ids,color){
+    edit(null,function(){ ids.forEach(function(i){ var s=S.T.shapes[i]; s.color=color; s.hidden=false; }); });
+  }
+  function selArr(){ return [...S.sel].filter(function(i){ return !S.T.shapes[i].hidden; }); }
+  function largest(ids){ var b=ids[0]; ids.forEach(function(i){ if(S.T.shapes[i].area>S.T.shapes[b].area) b=i; }); return b; }
+  function action(a){
+    var T=S.T; if(!T) return; var ids=selArr();
+    if(a==='all'){ applySel(T.shapes.map(function(s,i){return s.hidden?-1:i;}).filter(function(i){return i>=0;}),'new'); return; }
+    if(a==='none'){ applySel([],'new'); return; }
+    if(a==='invert'){ applySel(T.shapes.map(function(s,i){return (!s.hidden&&!S.sel.has(i))?i:-1;}).filter(function(i){return i>=0;}),'new'); return; }
+    if(!ids.length){ toast('Сначала выдели области'); return; }
+    if(a==='fill'){ useColor(S.cur); fillIds(ids,S.cur); toast('Залито: '+ids.length); }
+    else if(a==='take'){ useColor(T.shapes[largest(ids)].color); toast('Цвет взят: '+S.cur); }
+    else if(a==='merge'){ var c=T.shapes[largest(ids)].color; edit('Объединено в '+c,function(){ ids.forEach(function(i){ T.shapes[i].color=c; }); }); }
+    else if(a==='delete'){ edit('Удалено: '+ids.length,function(){ ids.forEach(function(i){ T.shapes[i].hidden=true; }); S.sel.clear(); }); }
+    else if(a==='grow'){ var add=new Set(ids), cols=[...new Set(ids.map(function(i){return T.shapes[i].color;}))];
+      T.shapes.forEach(function(s,i){ if(!s.hidden&&cols.some(function(c){return VCore.dE(c,s.color)<=S.tol;})) add.add(i); });
+      applySel([...add],'new'); toast('Выделено: '+add.size); }
+  }
+  function removeBackground(){
+    var T=S.T; if(!T) return;
+    var votes=new Map(), border=new Set(), w=T.w,h=T.h;
+    function vote(x,y){ var id=T.idm[y*w+x]; if(id<0||T.shapes[id].hidden) return; border.add(id); var c=T.shapes[id].color; votes.set(c,(votes.get(c)||0)+1); }
+    for(var x=0;x<w;x++){ vote(x,0); vote(x,h-1); } for(var y=0;y<h;y++){ vote(0,y); vote(w-1,y); }
+    if(!votes.size){ toast('Фон уже прозрачный'); return; }
+    var top=null,tv=0; votes.forEach(function(v,c){ if(v>tv){tv=v;top=c;} });
+    var adj=adjOf(T), seeds=[...border].filter(function(i){ return VCore.dE(T.shapes[i].color,top)<=Math.max(S.tol,6); });
+    var out=new Set(); seeds.forEach(function(sd){ if(out.has(sd)) return; VCore.scopeSet(T.shapes,adj,sd,'connected',Math.max(S.tol,6)).forEach(function(i){ out.add(i); }); });
+    edit('Фон убран',function(){ out.forEach(function(i){ T.shapes[i].hidden=true; S.sel.delete(i); }); });
+  }
+  function mergeSimilar(){
+    var T=S.T; if(!T) return;
+    var by=new Map(); T.shapes.forEach(function(s){ if(!s.hidden) by.set(s.color,(by.get(s.color)||0)+s.area); });
+    var cols=[...by.entries()].sort(function(a,b){return b[1]-a[1];}).map(function(e){return e[0];}), map=new Map(), heads=[];
+    cols.forEach(function(c){ var hd=heads.find(function(h){ return VCore.dE(h,c)<=Math.max(S.tol,1); }); if(hd) map.set(c,hd); else heads.push(c); });
+    if(!map.size){ toast('Нет оттенков ближе допуска '+S.tol); return; }
+    edit('Слито цветов: '+map.size,function(){ T.shapes.forEach(function(s){ var m=map.get(s.color); if(m) s.color=m; }); });
+  }
+
+  /* ---------- отрисовка ---------- */
+  function renderAll(){ renderVector(); renderSwatches(); renderStats(); renderView(); renderOverlay(); renderSelInfo(); }
+  function outOpts(){ var d=outDims(); return {seams:S.seams,style:S.style,strokeW:S.strokeW,width:S.unit==='mm'?r2(d.W)+'mm':Math.round(d.W),height:S.unit==='mm'?r2(d.H)+'mm':Math.round(d.H)}; }
+  function r2(v){ return Math.round(v*100)/100; }
+  function renderVector(){
+    var T=S.T; if(!T) return;
+    var o=outOpts(); o.fluid=true;
+    if(S.view==='outline') o.outline=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#2a4ee0';
+    $('vec').innerHTML=VCore.toSVG(T.shapes,T.w,T.h,o);
+    svgCache=VCore.toSVG(T.shapes,T.w,T.h,outOpts());
+    $('ov').setAttribute('viewBox','0 0 '+T.w+' '+T.h);
+    $('undo').disabled=!S.undo.length; $('redo').disabled=!S.redo.length;
+    $('restoreAll').disabled=!T.shapes.some(function(s){return s.hidden&&!s.keyBg;});
+  }
+  function renderSwatches(){
+    var T=S.T, box=$('swatches'); box.textContent='';
+    var by=new Map();
+    T.shapes.forEach(function(s,i){ var g=by.get(s.color); if(!g){ g={c:s.color,area:0,vis:0,ids:[]}; by.set(s.color,g); } g.ids.push(i); if(!s.hidden){ g.area+=s.area; g.vis++; } });
+    var list=[...by.values()].sort(function(a,b){ return (b.vis?1:0)-(a.vis?1:0)||b.area-a.area; });
+    var visCount=list.filter(function(g){return g.vis;}).length;
+    $('palCount').textContent=visCount+' цв.';
+    list.forEach(function(g){
+      var off=!g.vis, sw=document.createElement('div'); sw.className='sw'+(off?' off':'');
+      var chip=document.createElement('button'); chip.className='chip'; chip.style.background=g.c; chip.setAttribute('aria-label','Перекрасить '+g.c);
+      var inp=document.createElement('input'); inp.type='color'; inp.className='hidden-color'; inp.value=g.c; inp.tabIndex=-1;
+      var started=false, current=g.c;
+      chip.onclick=function(){ inp.click(); };
+      inp.oninput=function(){ if(!started){ pushUndo(); started=true; } g.ids.forEach(function(i){ T.shapes[i].color=inp.value; }); current=inp.value; chip.style.background=inp.value; nm.textContent=inp.value; renderVector(); };
+      inp.onchange=function(){ started=false; useColor(current); renderAll(); };
+      var nm=document.createElement('button'); nm.className='name'; nm.textContent=g.c; nm.title='Выделить все области этого цвета';
+      nm.onclick=function(){ setTool('select'); applySel(g.ids.filter(function(i){return !T.shapes[i].hidden;}),'new'); };
+      var sh=document.createElement('span'); sh.className='share'; sh.textContent=g.vis?((g.area/T.total*100).toFixed(g.area/T.total<0.01?1:0)+'%'):'—';
+      var eye=document.createElement('button'); eye.className='eye'; eye.textContent=off?'показать':'скрыть';
+      eye.onclick=function(){ edit(null,function(){ g.ids.forEach(function(i){ T.shapes[i].hidden=!off; if(!off) S.sel.delete(i); }); }); };
+      sw.append(chip,inp,nm,sh,eye); box.append(sw);
+    });
+  }
+  function renderStats(){
+    var T=S.T, n=0, cols=new Set();
+    T.shapes.forEach(function(s){ if(!s.hidden){ n++; cols.add(s.color); } });
+    var kb=new Blob([svgCache]).size/1024;
+    $('stats').innerHTML='<span>Исходник <b>'+S.origW+'×'+S.origH+'</b></span><span>Цветов <b>'+cols.size+'</b></span><span>Фигур <b>'+n.toLocaleString('ru')+'</b></span><span>SVG <b>'+(kb>1024?(kb/1024).toFixed(1)+' МБ':kb.toFixed(0)+' КБ')+'</b></span><span>Трассировка <b>'+(S.ms/1000).toFixed(2)+' с</b></span>'+(VT&&S.prepHow?'<span>Подготовка <b>'+S.prepHow.replace(/[<>&]/g,'')+'</b></span>':'');
+    var note=$('note');
+    if(S.isSample){ note.className='note sample'; note.textContent='Это пример. Загрузи свою картинку кнопкой сверху, перетащи файл на страницу или вставь из буфера (Ctrl+V).'; }
+    else { note.className='note'; note.textContent=n>20000?'Фигур очень много. Для лёгкого файла уменьши число цветов или увеличь «Убрать мелкие пятна».':''; }
+  }
+  function renderView(){
+    setPressed('view','v',S.view); setPressed('zoom','z',S.zoom); setPressed('tools','t',S.tool);
+    var cmp=S.view==='compare', vec=$('vec'), orig=$('orig'), cv=$('canvas'), vp=$('viewport');
+    orig.hidden=S.view==='vector';
+    vec.hidden=S.view==='original';
+    vec.style.clipPath=cmp?'inset(0 0 0 '+S.split+'%)':'none';
+    $('handle').hidden=!cmp; $('handle').style.left=S.split+'%';
+    $('tagL').hidden=$('tagR').hidden=!cmp; $('splitrow').hidden=!cmp;
+    orig.style.opacity=S.view==='outline'?'.45':'1';
+    cv.dataset.tool=S.tool;
+    cv.classList.toggle('zoomed',S.zoom>1);
+    cv.classList.toggle('nopan',S.tool!=='hand'||S.zoom>1);
+    if(!S.origW) return;
+    var aw=vp.clientWidth-32, ah=vp.clientHeight-32, fitW=Math.max(80,Math.min(aw,ah*S.origW/S.origH));
+    var w=fitW*S.zoom; cv.style.width=w+'px'; cv.style.height=(w*S.origH/S.origW)+'px';
+    renderStatus();
+  }
+  function renderOverlay(){
+    var T=S.T, ov=$('ov'); if(!T) return;
+    var parts=[], ids=selArr();
+    if(ids.length){ var d=''; ids.forEach(function(i){ d+=T.shapes[i].d; }); parts.push('<path class="sel" fill-rule="evenodd" vector-effect="non-scaling-stroke" d="'+d+'"/>'); }
+    if(S.hover>=0&&S.tool!=='hand'&&!T.shapes[S.hover].hidden) parts.push('<path class="hov" fill-rule="evenodd" vector-effect="non-scaling-stroke" d="'+T.shapes[S.hover].d+'"/>');
+    if(mq) parts.push('<rect class="mq" vector-effect="non-scaling-stroke" x="'+Math.min(mq.x0,mq.x1)+'" y="'+Math.min(mq.y0,mq.y1)+'" width="'+Math.abs(mq.x1-mq.x0)+'" height="'+Math.abs(mq.y1-mq.y0)+'"/>');
+    ov.innerHTML=parts.join('');
+  }
+  function renderSelInfo(){
+    var ids=selArr(), on=ids.length>0;
+    [].forEach.call($('selActions').querySelectorAll('button'),function(b){ var a=b.dataset.a; b.disabled=!on&&!(a==='all'||(a==='invert'&&S.T)); });
+    if(!on){ $('selInfo').innerHTML='Ничего не выделено. Возьми «Выделение» (V) и кликни по области или обведи рамкой.'; return; }
+    var area=0, cols=new Set(); ids.forEach(function(i){ area+=S.T.shapes[i].area; cols.add(S.T.shapes[i].color); });
+    $('selInfo').innerHTML='Выделено: <b>'+ids.length+'</b> '+plural(ids.length,'фигура','фигуры','фигур')+', <b>'+cols.size+'</b> '+plural(cols.size,'цвет','цвета','цветов')+', <b>'+(area/S.T.total*100).toFixed(1)+'%</b> площади';
+  }
+  function plural(n,a,b,c){ var m=n%10,h=n%100; return m===1&&h!==11?a:(m>=2&&m<=4&&(h<12||h>14)?b:c); }
+  function renderStatus(){
+    var st=$('status'), T=S.T;
+    var hints={hand:S.zoom>1?'Тяни, чтобы двигать холст.':(S.view==='compare'?'Тяни по картинке, чтобы двигать шторку.':'Режим просмотра.'),
+      select:'Клик — выделить, рамка — выделить несколько. Shift добавляет, Alt вычитает.',
+      fill:'Клик — залить текущим цветом. Alt + клик — взять цвет.',
+      pick:'Клик по области — взять её цвет, потом сразу включится заливка.'};
+    var h='<span>'+hints[S.tool]+'</span>';
+    if(T&&S.hover>=0){ var s=T.shapes[S.hover]; h+='<span><i class="dot" style="background:'+s.color+'"></i><span class="hex">'+s.color+'</span> · '+(s.area/T.total*100).toFixed(2)+'% площади'+(s.hidden?' · удалена':'')+'</span>'; }
+    st.innerHTML=h;
+  }
+
+  /* ---------- инструменты и указатель ---------- */
+  function setTool(t){
+    S.tool=t;
+    if(t!=='hand'&&(S.view==='compare'||S.view==='original')) S.view='vector';
+    S.hover=-1; renderVector(); renderView(); renderOverlay();
+  }
+  var cv=$('canvas'), vp=$('viewport'), drag=null, mq=null, hoverRaf=0;
+  function toImg(e){ var r=cv.getBoundingClientRect(), T=S.T; return {x:(e.clientX-r.left)/r.width*(T?T.w:1), y:(e.clientY-r.top)/r.height*(T?T.h:1)}; }
+  function modeFrom(e){ if(e.altKey) return 'sub'; if(e.shiftKey||e.ctrlKey||e.metaKey) return 'add'; return S.selMode; }
+  cv.addEventListener('pointerdown',function(e){
+    if(e.button!==0) return;
+    drag={x:e.clientX,y:e.clientY,sl:vp.scrollLeft,st:vp.scrollTop,moved:false,p:toImg(e)};
+    cv.setPointerCapture(e.pointerId);
+    if(S.tool==='hand'&&S.zoom===1&&S.view==='compare') setSplit(e);
+  });
+  cv.addEventListener('pointermove',function(e){
+    if(drag){
+      var dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+      if(Math.abs(dx)+Math.abs(dy)>5) drag.moved=true;
+      if(S.tool==='hand'){
+        if(S.zoom>1){ vp.scrollLeft=drag.sl-dx; vp.scrollTop=drag.st-dy; }
+        else if(S.view==='compare') setSplit(e);
+      } else if(S.tool==='select'&&drag.moved){ var p=toImg(e); mq={x0:drag.p.x,y0:drag.p.y,x1:p.x,y1:p.y}; renderOverlay(); }
+      return;
+    }
+    if(S.tool==='hand'||!S.T) return;
+    var p=toImg(e);
+    cancelAnimationFrame(hoverRaf); hoverRaf=requestAnimationFrame(function(){ var id=hit(p.x,p.y); if(id!==S.hover){ S.hover=id; renderOverlay(); renderStatus(); } });
+  });
+  cv.addEventListener('pointerleave',function(){ if(!drag&&S.hover>=0){ S.hover=-1; renderOverlay(); renderStatus(); } });
+  cv.addEventListener('pointerup',function(e){
+    if(!drag) return; var d=drag; drag=null;
+    if(S.tool==='hand'||!S.T) return;
+    var mode=modeFrom(e);
+    if(S.tool==='select'&&mq){
+      var x0=Math.min(mq.x0,mq.x1),x1=Math.max(mq.x0,mq.x1),y0=Math.min(mq.y0,mq.y1),y1=Math.max(mq.y0,mq.y1); mq=null;
+      var ids=[]; S.T.shapes.forEach(function(s,i){ var b=s.bbox; if(!s.hidden&&b[0]>=x0&&b[2]<=x1&&b[1]>=y0&&b[3]<=y1) ids.push(i); });
+      applySel(ids,mode); if(ids.length) toast('Рамкой выделено: '+ids.length); return;
+    }
+    if(d.moved) return;
+    var id=hit(d.p.x,d.p.y); if(id<0) return;
+    var s=S.T.shapes[id];
+    if(S.tool==='pick'||(S.tool==='fill'&&e.altKey)){
+      if(s.hidden){ toast('Эта область удалена'); return; }
+      useColor(s.color); toast('Цвет взят: '+s.color); if(S.tool==='pick') setTool('fill'); return;
+    }
+    if(S.tool==='fill'){
+      var ids2=s.hidden?[id]:scopeOf(id);
+      if(ids2.every(function(i){ return S.T.shapes[i].color===S.cur&&!S.T.shapes[i].hidden; })){ toast('Уже этого цвета'); return; }
+      useColor(S.cur); fillIds(ids2,S.cur); toast('Залито: '+ids2.length+' '+plural(ids2.length,'фигура','фигуры','фигур')); return;
+    }
+    if(S.tool==='select'){ if(s.hidden) return; applySel(scopeOf(id),mode); }
+  });
+  cv.addEventListener('pointercancel',function(){ drag=null; mq=null; renderOverlay(); });
+  function setSplit(e){ var r=cv.getBoundingClientRect(); S.split=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100)); $('split').value=S.split; renderView(); }
+
+  /* ---------- экспорт ---------- */
+  function showMsg(t,err){ var m=$('exMsg'); m.textContent=t; m.className='msg'+(err?' err':''); }
+  function svgToPng(scale){
+    return new Promise(function(res,rej){
+      var T=S.T, W=Math.min(8000,S.origW*scale), H=Math.round(W*S.origH/S.origW);
+      var o=outOpts(); o.width=W; o.height=H; o.strokeW=S.strokeW;
+      var img=new Image();
+      img.onload=function(){ var c=document.createElement('canvas'); c.width=W;c.height=H; c.getContext('2d').drawImage(img,0,0,W,H); c.toBlob(function(b){ b?res(b):rej(new Error('PNG не собрался')); },'image/png'); };
+      img.onerror=function(){ rej(new Error('PNG не собрался')); };
+      img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(VCore.toSVG(T.shapes,T.w,T.h,o));
+    });
+  }
+  function ptDims(){ var d=outDims(), k=S.unit==='mm'?72/25.4:1; return {W:d.W*k,H:d.H*k}; }
+  function files(){
+    var T=S.T, o=outOpts(), pt=ptDims(), d=outDims(), n=S.name;
+    return {
+      svg:{name:n+'.svg',data:VCore.toSVG(T.shapes,T.w,T.h,o)},
+      pdf:{name:n+'.pdf',data:VCore.toPDF(T.shapes,T.w,T.h,pt.W,pt.H,o)},
+      eps:{name:n+'.eps',data:VCore.toEPS(T.shapes,T.w,T.h,pt.W,pt.H,o)},
+      dxf:{name:n+'.dxf',data:VCore.toDXF(T.shapes,T.w,T.h,d.W,d.H)}
+    };
+  }
+  function build(f){
+    var n=S.name;
+    if(f==='svg'||f==='pdf'){ var x=files()[f]; return Promise.resolve({filename:x.name,data:x.data}); }
+    if(f==='eps'||f==='dxf'){ var y=files()[f]; return Promise.resolve({filename:n+'-'+f+'.zip',data:VCore.zip([y])}); }
+    if(f==='png') return svgToPng(S.pngScale).then(function(b){ return {filename:n+'@'+S.pngScale+'x.png',data:b}; });
+    return svgToPng(S.pngScale).then(function(b){ return b.arrayBuffer(); }).then(function(buf){
+      var F=files(); return {filename:n+'-vector.zip',data:VCore.zip([F.svg,F.pdf,F.eps,F.dxf,{name:n+'@'+S.pngScale+'x.png',data:new Uint8Array(buf)}])};
+    });
+  }
+  function toBytes(d){ if(typeof d==='string') return Promise.resolve(d); if(d instanceof Blob) return d.arrayBuffer().then(function(b){ return new Uint8Array(b); }); return Promise.resolve(d); }
+  function deskExport(f){
+    var F=files(), list;
+    if(f==='all') list=svgToPng(S.pngScale).then(function(b){ return b.arrayBuffer(); }).then(function(buf){ return [F.svg,F.pdf,F.eps,F.dxf,{name:S.name+'@'+S.pngScale+'x.png',data:new Uint8Array(buf)}]; });
+    else if(f==='png') list=svgToPng(S.pngScale).then(function(b){ return toBytes(b); }).then(function(u){ return [{name:S.name+'@'+S.pngScale+'x.png',data:u}]; });
+    else list=Promise.resolve([F[f]]);
+    showMsg('Готовлю файл…');
+    list.then(function(L){ return f==='all'?DESK.saveMany(L):DESK.save(L[0].name,L[0].data); })
+    .then(function(r){ if(!r||r.canceled) showMsg('Сохранение отменено.'); else showMsg('Сохранено: '+r.path); })
+    .catch(function(e){ showMsg('Не удалось сохранить: '+((e&&e.message)||'ошибка'),true); });
+  }
+  function doExport(f){
+    if(!S.T) return;
+    if(DESK){ deskExport(f); return; }
+    if(!dl){ showMsg('Скачивание здесь недоступно. Скопируй код SVG кнопкой выше.',true); return; }
+    showMsg('Готовлю файл…');
+    build(f).then(function(file){ return dl.save(file); }).then(function(){ showMsg('Файл передан на сохранение.'); })
+    .catch(function(e){
+      var c=e&&e.code;
+      if(c==='declined') showMsg('Сохранение отменено.');
+      else if(c==='rate_limited') showMsg('Окно сохранения уже открыто. Подожди и попробуй снова.',true);
+      else if(c==='too_large') showMsg('Файл слишком большой. Уменьши масштаб PNG или число цветов.',true);
+      else showMsg('Не удалось сохранить: '+((e&&e.message)||c||'ошибка'),true);
+    });
+  }
+  function copySvg(){
+    var t=svgCache, done=function(){ showMsg('Код SVG скопирован.'); };
+    function fallback(){ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.append(ta); ta.select();
+      try{ document.execCommand('copy'); done(); }catch(e){ showMsg('Не получилось скопировать.',true); } ta.remove(); }
+    try{ navigator.clipboard.writeText(t).then(done,fallback); }catch(e){ fallback(); }
+  }
+
+  /* ---------- события ---------- */
+  $('pick').onclick=function(){ $('file').click(); };
+  $('file').onchange=function(){ loadFile(this.files[0]); this.value=''; };
+  $('rotL').onclick=function(){ transformSource('l'); };
+  $('rotR').onclick=function(){ transformSource('r'); };
+  $('flipH').onclick=function(){ transformSource('flip'); };
+  $('presets').onclick=function(e){ var b=e.target.closest('button'); if(b) applyPreset(b.dataset.p); };
+  ['colors','detail','smooth','speck','thresh','merge'].forEach(function(id){ $(id).addEventListener('input',onSlider); });
+  $('tools').onclick=function(e){ var b=e.target.closest('button'); if(b) setTool(b.dataset.t); };
+  $('view').onclick=function(e){ var b=e.target.closest('button'); if(!b) return; S.view=b.dataset.v; if(S.view==='compare'||S.view==='original') S.tool='hand'; savePrefs(); renderVector(); renderView(); renderOverlay(); };
+  $('zoom').onclick=function(e){ var b=e.target.closest('button'); if(!b) return;
+    var cx=(vp.scrollLeft+vp.clientWidth/2)/vp.scrollWidth, cy=(vp.scrollTop+vp.clientHeight/2)/vp.scrollHeight;
+    S.zoom=+b.dataset.z; renderView(); vp.scrollLeft=cx*vp.scrollWidth-vp.clientWidth/2; vp.scrollTop=cy*vp.scrollHeight-vp.clientHeight/2; };
+  $('split').oninput=function(){ S.split=+this.value; renderView(); };
+  $('scope').onclick=function(e){ var b=e.target.closest('button'); if(!b) return; S.scope=b.dataset.s; savePrefs(); syncControls(); };
+  $('selmode').onclick=function(e){ var b=e.target.closest('button'); if(!b) return; S.selMode=b.dataset.m; syncControls(); };
+  $('tol').oninput=function(){ S.tol=+this.value; savePrefs(); syncControls(); };
+  $('curChip').onclick=function(){ $('curInput').click(); };
+  $('curInput').oninput=function(){ S.cur=this.value; renderCur(); };
+  $('curInput').onchange=function(){ useColor(this.value); };
+  $('curHex').onchange=function(){ var v=this.value.trim(); if(v[0]!=='#') v='#'+v; if(/^#[0-9a-f]{3}$/i.test(v)) v='#'+v[1]+v[1]+v[2]+v[2]+v[3]+v[3]; if(/^#[0-9a-f]{6}$/i.test(v)) useColor(v); else { this.value=S.cur; toast('Нужен HEX вида #1a2b3c'); } };
+  $('selActions').onclick=function(e){ var b=e.target.closest('button'); if(b) action(b.dataset.a); };
+  $('undo').onclick=undo; $('redo').onclick=redo;
+  $('bgBtn').onclick=removeBackground;
+  $('restoreAll').onclick=function(){ edit('Удалённое возвращено',function(){ S.T.shapes.forEach(function(s){ if(!s.keyBg) s.hidden=false; }); }); };
+  $('mergeSimilar').onclick=mergeSimilar;
+  if(VT){
+    $('fMerge').hidden=false; $('fNeural').hidden=false; $('fObj').hidden=false; $('fLocked').hidden=false;
+    $('seams').closest('label').hidden=true; S.seams=false;
+    document.querySelector('label[for="smooth"]').textContent='Сглаживание кривых';
+    document.querySelector('label[for="colors"]').textContent='Не больше цветов'; document.querySelector('label[for="speck"]').closest('.field').hidden=true;
+    document.querySelector('label[for="detail"]').nextElementSibling.nextElementSibling.nextElementSibling.textContent='Больше — сохраняются мелкие детали и тонкие линии';
+    $('neural').onclick=function(e){ var b=e.target.closest('button'); if(!b||b.dataset.n===S.neural) return; S.neural=b.dataset.n; setPressed('neural','n',S.neural); savePrefs(); retrace(100); };
+    $('objOnly').onchange=function(){ S.objOnly=this.checked; retrace(100); };
+    $('lockStrict').onchange=function(){ S.lockStrict=this.checked; savePrefs(); if(S.locked.length) retrace(100); };
+    $('lockAdd').onclick=function(){ var v=$('lockPick').value.toLowerCase(); if(S.locked.indexOf(v)<0){ S.locked.push(v); savePrefs(); renderLocks(); retrace(200); } };
+    $('lockFromPal').onclick=function(){ if(!S.T) return; var seen={}; S.locked=[]; S.T.shapes.forEach(function(sh){ if(!sh.hidden&&!seen[sh.color]){ seen[sh.color]=1; S.locked.push(sh.color); } }); savePrefs(); renderLocks(); toast('Палитра сохранена как своя: '+S.locked.length+' цв.'); };
+    function neuralAvail(){
+      Promise.all([DESK.canUpscale?DESK.canUpscale():false,DESK.canCutout?DESK.canCutout():false]).then(function(r){
+        if(!r[0]) $('neuralHint').textContent='Сейчас без нейросети: картинка просто увеличивается. Скачай в «Моделях» набор «Улучшение качества» (45 МБ) — края станут чище и ровнее.';
+        $('objHint').hidden=!!r[1]; $('objHint').textContent=r[1]?'':'Нужен набор «Фон и лишние предметы» в «Моделях».';
+      }).catch(function(){});
+    }
+    neuralAvail(); window.addEventListener('focus',neuralAvail);
+  }
+  $('seams').onchange=function(){ S.seams=this.checked; savePrefs(); renderVector(); renderStats(); };
+  $('style').onclick=function(e){ var b=e.target.closest('button'); if(!b) return; S.style=b.dataset.st; savePrefs(); syncControls(); renderVector(); renderStats(); };
+  $('strokeW').oninput=function(){ S.strokeW=+this.value; savePrefs(); syncControls(); renderVector(); };
+  $('outW').oninput=function(){ var v=parseFloat(this.value); if(v>0){ S.outW=v; syncControls(); renderVector(); renderStats(); } };
+  $('unit').onclick=function(e){ var b=e.target.closest('button'); if(!b||b.dataset.u===S.unit) return;
+    S.outW=b.dataset.u==='mm'?S.outW*25.4/96:S.outW*96/25.4; S.outW=Math.round(S.outW*10)/10; S.unit=b.dataset.u; savePrefs(); syncControls(); renderVector(); };
+  $('pngScale').oninput=function(){ S.pngScale=+this.value; savePrefs(); syncControls(); };
+  $('exports').onclick=function(e){ var b=e.target.closest('button[data-f]'); if(b) doExport(b.dataset.f); };
+  $('copySvg').onclick=copySvg;
+  window.addEventListener('keydown',function(e){
+    var t=e.target; if(t&&(t.tagName==='INPUT'&&t.type!=='range'&&t.type!=='checkbox'||t.tagName==='TEXTAREA')) return;
+    var k=e.key.toLowerCase(), mod=e.ctrlKey||e.metaKey;
+    if(mod&&k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
+    if(mod&&k==='y'){ e.preventDefault(); redo(); return; }
+    if(mod&&k==='a'){ if(!S.T) return; e.preventDefault(); setTool('select'); action('all'); return; }
+    if(mod) return;
+    if(k==='v'||k==='м') setTool('select'); else if(k==='g'||k==='п') setTool('fill'); else if(k==='i'||k==='ш') setTool('pick'); else if(k==='h'||k==='р') setTool('hand');
+    else if(k==='escape'){ mq=null; action('none'); }
+    else if(k==='delete'||k==='backspace'){ if(S.sel.size){ e.preventDefault(); action('delete'); } }
+    else if(k==='f'||k==='а'){ if(S.sel.size) action('fill'); }
+  });
+  var depth=0;
+  window.addEventListener('dragenter',function(e){ e.preventDefault(); depth++; $('drop').hidden=false; });
+  window.addEventListener('dragleave',function(){ if(--depth<=0){ depth=0; $('drop').hidden=true; } });
+  window.addEventListener('dragover',function(e){ e.preventDefault(); });
+  window.addEventListener('drop',function(e){ e.preventDefault(); depth=0; $('drop').hidden=true; var f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+  window.addEventListener('paste',function(e){ var it=[].find.call((e.clipboardData&&e.clipboardData.items)||[],function(i){return i.type.indexOf('image/')===0;}); if(it) loadFile(it.getAsFile()); });
+  window.addEventListener('resize',function(){ renderView(); });
+
+  /* ---------- ИИ-помощник (Claude через аккаунт смотрящего) ---------- */
+  var AI={sample:null,limits:null,turns:[],ctl:null,busy:false};
+  function aiLog(cls,text){ var b=document.createElement('div'); b.className='bubble '+cls; b.textContent=text; $('aiLog').append(b); $('aiLog').scrollTop=1e9; return b; }
+  function aiErr(e){
+    var c=e&&e.code;
+    var map={not_granted:'Доступ к Claude для этой страницы не разрешён. Обнови страницу, чтобы спросить снова.',
+      sampling_disabled:'Claude недоступен для этого аккаунта.',rate_limited:'Слишком много запросов или исчерпан лимит. Попробуй чуть позже.',
+      session_expired:'Нужно заново войти в Claude.',image_rejected:'Картинку не удалось отправить. Попробуй другой файл.',
+      refused:'Claude отказался выполнять этот запрос. Переформулируй.',invalid_json:'Ответ пришёл в неожиданном виде. Нажми ещё раз.',
+      empty_completion:'Пустой ответ. Попробуй сформулировать проще.',images_unavailable:'В этом окне нельзя отправлять картинки Claude.'};
+    return map[c]||'Не получилось связаться с Claude. Попробуй ещё раз.';
+  }
+  function normHex(v){ v=String(v||'').trim().toLowerCase(); if(v[0]!=='#') v='#'+v; if(/^#[0-9a-f]{3}$/.test(v)) v='#'+v[1]+v[1]+v[2]+v[2]+v[3]+v[3]; if(!/^#[0-9a-f]{6}$/.test(v)) throw new Error('неверный цвет '+v+', нужен HEX вида #1a2b3c'); return v; }
+  function srcBlob(){
+    return new Promise(function(res){
+      var s=S.src, k=Math.min(1,1024/Math.max(s.width,s.height)), c=document.createElement('canvas');
+      var t=document.createElement('canvas'); t.width=s.width; t.height=s.height; t.getContext('2d').putImageData(s,0,0);
+      c.width=Math.round(s.width*k); c.height=Math.round(s.height*k); c.getContext('2d').drawImage(t,0,0,c.width,c.height);
+      c.toBlob(res,'image/png');
+    });
+  }
+  function paletteInfo(){
+    var T=S.T, by=new Map();
+    T.shapes.forEach(function(s){
+      var g=by.get(s.color); if(!g){ g={hex:s.color,area:0,n:0,hid:0,x0:1e9,y0:1e9,x1:-1e9,y1:-1e9,edge:false}; by.set(s.color,g); }
+      if(s.hidden){ g.hid++; return; }
+      var b=s.bbox; g.area+=s.area; g.n++; g.x0=Math.min(g.x0,b[0]); g.y0=Math.min(g.y0,b[1]); g.x1=Math.max(g.x1,b[2]); g.y1=Math.max(g.y1,b[3]);
+      if(b[0]<=1||b[1]<=1||b[2]>=T.w-1||b[3]>=T.h-1) g.edge=true;
+    });
+    return [...by.values()].sort(function(a,b){return b.area-a.area;}).slice(0,40).map(function(g){
+      if(!g.n) return {hex:g.hex,hidden:true};
+      var pc=function(v,m){ return Math.round(v/m*100); };
+      return {hex:g.hex,share:+(g.area/T.total*100).toFixed(1),shapes:g.n,box:[pc(g.x0,T.w),pc(g.y0,T.h),pc(g.x1,T.w),pc(g.y1,T.h)],touchesEdge:g.edge};
+    });
+  }
+  function count(fn){ var n=0; S.T.shapes.forEach(function(s,i){ if(fn(s,i)) n++; }); return n; }
+  var AI_TOOLS=[
+    {name:'get_palette',description:'Текущая палитра: цвета (hex), доля площади в %, число фигур, рамка box [x0,y0,x1,y1] в % от размера картинки, касается ли края. Скрытые цвета помечены hidden.',
+      execute:function(){ return paletteInfo(); }},
+    {name:'recolor',description:'Перекрасить все фигуры указанных цветов палитры в один новый цвет. Возвращает число перекрашенных фигур.',
+      inputSchema:{type:'object',properties:{colors:{type:'array',items:{type:'string'},description:'HEX цветов из палитры'},to:{type:'string',description:'Новый цвет HEX'}},required:['colors','to']},
+      execute:function(a){ var to=normHex(a.to), from=(a.colors||[]).map(normHex); var n=count(function(s){return from.indexOf(s.color)>=0&&!s.hidden;});
+        if(!n) throw new Error('таких цветов нет среди видимых'); edit(null,function(){ S.T.shapes.forEach(function(s){ if(from.indexOf(s.color)>=0) s.color=to; }); }); useColor(to); aiLog('act','→ перекрашено фигур: '+n+' в '+to); return {recolored:n}; }},
+    {name:'fill_at',description:'Залить цветом область в точке картинки (x,y в % от ширины и высоты, 0 — левый верхний угол). scope: shape — одна фигура, connected — фигура и соседние похожего оттенка, similar — все похожие по всей картинке.',
+      inputSchema:{type:'object',properties:{x:{type:'number'},y:{type:'number'},to:{type:'string'},scope:{type:'string',enum:['shape','connected','similar']},tolerance:{type:'number',description:'Допуск по оттенку 0-60, по умолчанию 14'}},required:['x','y','to']},
+      execute:function(a){ var to=normHex(a.to), id=hit(Number(a.x)/100*S.T.w,Number(a.y)/100*S.T.h); if(id<0) throw new Error('в этой точке нет области');
+        var tol=a.tolerance==null?14:Math.max(0,Math.min(60,Number(a.tolerance))), sc=['shape','connected','similar'].indexOf(a.scope)>=0?a.scope:'connected';
+        var ids=VCore.scopeSet(S.T.shapes,sc==='connected'?adjOf(S.T):null,id,sc,tol); fillIds(ids,to); useColor(to); aiLog('act','→ залито фигур: '+ids.length+' цветом '+to); return {filled:ids.length,wasColor:S.T.shapes[id].color}; }},
+    {name:'hide_colors',description:'Удалить (сделать прозрачными) все фигуры указанных цветов.',
+      inputSchema:{type:'object',properties:{colors:{type:'array',items:{type:'string'}}},required:['colors']},
+      execute:function(a){ var c=(a.colors||[]).map(normHex), n=count(function(s){return c.indexOf(s.color)>=0&&!s.hidden;});
+        edit(null,function(){ S.T.shapes.forEach(function(s,i){ if(c.indexOf(s.color)>=0){ s.hidden=true; S.sel.delete(i); } }); }); aiLog('act','→ удалено фигур: '+n); return {hidden:n}; }},
+    {name:'show_colors',description:'Вернуть ранее удалённые фигуры указанных цветов.',
+      inputSchema:{type:'object',properties:{colors:{type:'array',items:{type:'string'}}},required:['colors']},
+      execute:function(a){ var c=(a.colors||[]).map(normHex); edit(null,function(){ S.T.shapes.forEach(function(s){ if(c.indexOf(s.color)>=0) s.hidden=false; }); }); aiLog('act','→ возвращены цвета: '+c.join(', ')); return 'ok'; }},
+    {name:'remove_background',description:'Убрать фон: удаляет области от краёв картинки с преобладающим по краю цветом, не трогая такой же цвет внутри рисунка.',
+      execute:function(){ var before=count(function(s){return s.hidden;}); removeBackground(); var n=count(function(s){return s.hidden;})-before; aiLog('act','→ фон убран, фигур: '+n); return {removed:n}; }},
+    {name:'merge_similar',description:'Слить похожие оттенки: цвета ближе допуска (ΔE в Lab, 1-60) станут одним, самым крупным по площади.',
+      inputSchema:{type:'object',properties:{tolerance:{type:'number'}},required:['tolerance']},
+      execute:function(a){ var keep=S.tol; S.tol=Math.max(1,Math.min(60,Number(a.tolerance)||14)); var before=new Set(S.T.shapes.map(function(s){return s.color;})).size; mergeSimilar(); S.tol=keep; syncControls();
+        var after=new Set(S.T.shapes.map(function(s){return s.color;})).size; aiLog('act','→ цветов было '+before+', стало '+after); return {colorsBefore:before,colorsAfter:after}; }},
+    {name:'retrace',description:'Пересобрать вектор с новыми настройками. mode: color или bw (ч/б штрих). colors 2-64, detail 1-10 (выше — точнее углы), smooth 0-5 (подавление шума), speck 0-64 (убрать пятна меньше N px). Правки цветов после этого сбрасываются. Возвращает новую палитру.',
+      inputSchema:{type:'object',properties:{mode:{type:'string',enum:['color','bw']},colors:{type:'number'},detail:{type:'number'},smooth:{type:'number'},speck:{type:'number'}}},
+      execute:function(a){ applyAiSettings(a,'ИИ: пересобрано по команде.'); aiLog('act','→ пересобираю вектор…'); return waitTrace().then(function(){ return paletteInfo(); }); }}
+  ];
+  function clampInt(v,lo,hi,def){ v=Math.round(Number(v)); return isFinite(v)?Math.max(lo,Math.min(hi,v)):def; }
+  function applyAiSettings(a,msg){
+    var o=S.opts, mode=a.mode==='bw'?'bw':(a.mode==='color'?'color':o.mode);
+    S.opts={mode:mode,colors:clampInt(a.colors,2,64,o.colors),detail:clampInt(a.detail,1,10,o.detail),smooth:clampInt(a.smooth,0,5,o.smooth),speck:clampInt(a.speck,0,64,o.speck)};
+    S.preset=mode==='bw'?'bw':'custom'; if(mode==='bw') S.thresh=VCore.otsu(S.src);
+    $('autoMsg').textContent=msg; syncControls(); retrace(0);
+  }
+  function aiBusy(on){ AI.busy=on; $('aiSend').disabled=on; $('aiAuto').disabled=on; $('aiStop').hidden=!on; }
+  function aiAuto(){
+    if(!AI.sample||AI.busy||!S.src) return;
+    aiBusy(true); $('aiAutoMsg').textContent='Claude смотрит на картинку…';
+    var prompt='Ты подбираешь параметры автотрассировки растра в вектор (ImageTracer, k-means палитра). Посмотри на картинку и ответь ТОЛЬКО JSON-объектом:\n'+
+      '{"type":"logo|illustration|photo|lineart","mode":"color|bw","colors":число 2-64,"detail":1-10,"smooth":0-5,"speck":0-64,"removeBackground":true|false,"reason":"одно-два коротких предложения по-русски"}\n'+
+      'Правила: colors — сколько реально различимых цветов нужно сохранить (логотип 2-8, иллюстрация 8-24, фото 24-48; не считай оттенки сглаживания краёв отдельными цветами). '+
+      'detail: 7-9 для чётких логотипов и шрифтов, 5-6 для иллюстраций, 3-4 для фото. smooth: 0 для чистой графики, 1-2 для JPEG-шума и фото. speck: 4-12 для графики, 12-24 для фото. '+
+      'mode bw — только для чёрно-белого штриха, подписей, силуэтов. removeBackground true — если есть однотонный фон вокруг объекта, который в векторе обычно не нужен.\n'+
+      'Сейчас автоанализ определил: '+JSON.stringify(S.autoInfo)+'. Размер: '+S.origW+'×'+S.origH+' px.';
+    srcBlob().then(function(b){ return AI.sample.json(prompt,{images:[b],cache:{gcTime:3600000}}); })
+    .then(function(r){
+      if(!r||typeof r!=='object') throw {code:'invalid_json'};
+      applyAiSettings(r,'ИИ: '+String(r.reason||'настройки подобраны.'));
+      $('aiAutoMsg').textContent='Готово: '+String(r.reason||'настройки подобраны.');
+      return waitTrace().then(function(){ if(r.removeBackground===true) removeBackground(); });
+    })
+    .catch(function(e){ $('aiAutoMsg').textContent=aiErr(e); })
+    .then(function(){ aiBusy(false); });
+  }
+  function aiSend(textArg){
+    var text=(textArg||$('aiInput').value).trim(); if(!text||!AI.sample||AI.busy||!S.T) return;
+    $('aiInput').value=''; aiLog('me',text); aiBusy(true);
+    var rules='Ты — помощник в веб-редакторе векторизации. Картинка (исходный растр) приложена. Вектор уже построен: это набор залитых фигур, сгруппированных по цветам палитры. '+
+      'Выполняй просьбы пользователя ТОЛЬКО через инструменты. Координаты x,y — в процентах от ширины и высоты картинки. '+
+      'Чтобы понять, какой цвет палитры соответствует объекту на картинке, сопоставляй рамки box и доли площади с тем, что видишь. '+
+      'Если просьба неоднозначна, сделай самый разумный вариант и скажи, что именно изменил. В конце коротко, 1-2 предложения по-русски, без markdown, перечисли сделанное.\n\n'+
+      'Текущая палитра (JSON): '+JSON.stringify(paletteInfo())+'\nТекущие настройки трассировки: '+JSON.stringify(S.opts);
+    AI.turns.push({role:'user',content:text});
+    while(AI.turns.length>8) AI.turns.shift();
+    if(AI.turns[0].role!=='user') AI.turns.shift();
+    var bubble=null; AI.ctl=new AbortController();
+    var think=aiLog('act','Думаю…');
+    var opts={tools:AI.limits&&AI.limits.tools?AI_TOOLS:undefined,signal:AI.ctl.signal,onText:function(u){ think.remove(); if(!bubble) bubble=aiLog('ai',''); bubble.textContent=u.text; $('aiLog').scrollTop=1e9; }};
+    if(!opts.tools) delete opts.tools;
+    var imgP=AI.limits&&AI.limits.images?srcBlob():Promise.resolve(null);
+    imgP.then(function(b){ if(b) opts.images=[b]; return AI.sample([{role:'user',content:rules}].concat(AI.turns),opts); })
+    .then(function(r){ AI.turns.push({role:'assistant',content:r.text}); })
+    .catch(function(e){ think.remove(); if(e&&e.code==='cancelled'){ aiLog('act','Остановлено.'); AI.turns.pop(); return; }
+      if(e&&e.code==='refused'&&bubble) bubble.remove(); aiLog('err',aiErr(e)); AI.turns.pop(); })
+    .then(function(){ aiBusy(false); AI.ctl=null; });
+  }
+  $('aiAuto').onclick=aiAuto;
+  $('aiSend').onclick=function(){ aiSend(); };
+  $('aiStop').onclick=function(){ if(AI.ctl) AI.ctl.abort(); };
+  $('aiClear').onclick=function(){ AI.turns=[]; $('aiLog').textContent=''; };
+  $('aiChips').onclick=function(e){ var b=e.target.closest('button'); if(b) aiSend(b.textContent); };
+  $('aiInput').addEventListener('keydown',function(e){ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); aiSend(); } });
+  function aiInit(){
+    if(DESK){ $('aiPanel').hidden=true; return; }
+    var off=function(t){ $('aiAuto').disabled=true; $('aiChat').hidden=true; $('aiAutoMsg').textContent=t; $('aiState').textContent='недоступен'; };
+    if(!(window.claude&&window.claude.use)){ off('Помощник работает на опубликованной странице внутри Claude.'); return; }
+    window.claude.use('sample').then(function(sm){
+      if(!sm){ off('В этом окне Claude недоступен.'); return; }
+      AI.sample=sm;
+      return sm.limits().catch(function(){ return null; }).then(function(l){
+        AI.limits=l;
+        if(!l||!l.tools){ $('aiChat').hidden=true; }
+        $('aiState').textContent='Claude';
+      });
+    }).catch(function(){ off('В этом окне Claude недоступен.'); });
+  }
+  aiInit();
+
+  /* ---------- старт ---------- */
+  syncControls();
+  if(typeof ImageTracer==='undefined'){ $('note').textContent='Не загрузилась библиотека трассировки. Обнови страницу.'; }
+  else { var c=sampleCanvas(); setSource(c,c.toDataURL('image/png'),c.width,c.height,'primer',true); }
+  window.addEventListener('message',function(e){ var d=e.data; if(d&&d.type==='vz-open'&&d.bytes) loadFile(new File([d.bytes],d.name||'image.png',{type:d.mime||'image/png'})); });
+  // студия просит SVG для печати
+  window.addEventListener('message',function(e){ var d=e.data; if(!d||d.type!=='vz-get-svg') return;
+    var T=S.T, od=outDims(), wMm=S.unit==='mm'?od.W:od.W*25.4/96;
+    e.source.postMessage({type:'vz-svg',svg:T&&!S.isSample?svgCache:'',w:T?T.w:0,h:T?T.h:0,wMm:Math.round(wMm*10)/10,name:S.name},'*'); });
+  if(DESK){
+    [].forEach.call(document.querySelectorAll('#exports [data-f="eps"] span, #exports [data-f="dxf"] span'),function(s){ s.textContent='вектор'; });
+    document.querySelector('#exports [data-f="all"] span').textContent='в папку';
+    showMsg('');
+    DESK.onOpen(function(f){ loadFile(new File([f.bytes],f.name,{type:f.type})); });
+    DESK.onCommand(function(c){
+      if(c==='open') $('file').click();
+      else if(c==='save-svg') doExport('svg');
+      else if(c==='save-all') doExport('all');
+      else if(c==='undo') undo(); else if(c==='redo') redo();
+    });
+  } else if(window.claude&&window.claude.use){
+    window.claude.use('downloads').then(function(d){ dl=d; if(!d) showMsg('Скачивание файлов здесь недоступно, но можно скопировать код SVG.'); }).catch(function(){});
+  } else showMsg('Скачивание работает на опубликованной странице. Здесь можно скопировать код SVG.');
+})();
+</script>
+</body></html>

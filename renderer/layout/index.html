@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' data: blob:; worker-src 'self' blob:">
+<title>Вёрстка</title>
+<link rel="stylesheet" href="../fonts.css">
+<link rel="stylesheet" href="layout.css">
+</head>
+<body>
+<header class="bar">
+  <div class="grp">
+    <input class="docname" id="docName" value="Без названия" aria-label="Название проекта" spellcheck="false">
+  </div>
+  <div class="grp" id="fmtGrp">
+    <select id="fmtSel" aria-label="Формат"></select>
+    <span class="custom" id="customWH" hidden><input type="number" id="cW" min="20" max="2000" step="1" aria-label="Ширина, мм">×<input type="number" id="cH" min="20" max="2000" step="1" aria-label="Высота, мм"> мм</span>
+    <button class="btn ghost" id="bOrient" title="Повернуть формат">⟲ Ориентация</button>
+    <label class="mini">Вылет <input type="number" id="bleed" min="0" max="10" step="0.5"> мм</label>
+    <label class="mini">Поля <input type="number" id="safe" min="0" max="30" step="0.5"> мм</label>
+  </div>
+  <span class="grow"></span>
+  <div class="grp">
+    <button class="btn ghost" id="bUndo" title="Отменить (Ctrl+Z)">↶</button>
+    <button class="btn ghost" id="bRedo" title="Повторить (Ctrl+Shift+Z)">↷</button>
+    <button class="btn" id="bPreview" aria-pressed="false" title="Как будет после обрезки, без направляющих">Просмотр</button>
+    <button class="btn" id="bProjOpen">Открыть проект</button>
+    <button class="btn" id="bProjSave">Сохранить проект</button>
+    <div class="menuwrap"><button class="btn primary" id="bExport">Экспорт ▾</button>
+      <div class="menu" id="exportMenu" hidden>
+        <button data-x="pdf">PDF для типографии<small>каждая страница с вылетами под обрез</small></button>
+        <button data-x="pdf-marks">PDF с метками реза<small>то же, плюс метки обрезки по углам</small></button>
+        <button data-x="pdf-imposed" id="xImposed">PDF для печати дома<small>спуск полос: распечатать с двух сторон, сложить, скрепить</small></button>
+        <button data-x="png">PNG<small>каждая страница или формат картинкой, 300 dpi</small></button>
+        <hr>
+        <button data-x="print">Печать на принтере…<small>сразу на домашний принтер, чтобы посмотреть макет вживую (Ctrl+P)</small></button>
+      </div></div>
+  </div>
+</header>
+
+<div class="main">
+  <aside class="left">
+    <div class="lhead"><span id="leftTitle">Страницы</span><span class="hint" id="pageHint"></span></div>
+    <div class="thumbs" id="thumbs"></div>
+    <div class="lfoot" id="leftFoot"></div>
+  </aside>
+
+  <section class="center">
+    <div class="tools">
+      <button class="btn" id="addImg"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="3.5" width="15" height="13" rx="1.5"/><path d="M2.5 13l4-4 3.5 3.5 2.5-2.5 5 5"/></svg>Картинка, PDF, SVG</button>
+      <button class="btn" id="addText"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 5h12M10 5v11"/></svg>Текст</button>
+      <button class="btn" id="addRect"><svg viewBox="0 0 20 20" fill="currentColor" opacity=".8"><rect x="3" y="5" width="14" height="10" rx="1"/></svg>Плашка</button>
+      <span class="grow"></span>
+      <span class="hint" id="cursorInfo"></span>
+      <div class="seg" id="zoomSeg"><button data-z="fit" aria-pressed="true">Вписать</button><button data-z="1" aria-pressed="false">100%</button><button data-z="2" aria-pressed="false">200%</button></div>
+    </div>
+    <div class="stage" id="stage"><div class="spread" id="spread"></div></div>
+    <div class="legend"><span><i class="lg bleed"></i>вылет под обрез</span><span><i class="lg trim"></i>линия реза</span><span><i class="lg safe"></i>безопасная зона: текст и важное — внутри</span></div>
+  </section>
+
+  <aside class="right" id="props">
+    <div class="empty-props" id="noSel">
+      <h2>Ничего не выбрано</h2>
+      <p class="hint">Добавь картинку, текст или плашку кнопками сверху, или перетащи файлы на страницу. Клик по элементу выбирает его.</p>
+      <div class="kbd"><b>Стрелки</b> — сдвиг на 1 мм, с Shift — на 10 мм<br><b>Delete</b> — удалить<br><b>Ctrl+D</b> — дублировать<br><b>Ctrl+Z</b> — отменить</div>
+    </div>
+    <div id="selProps" hidden>
+      <section>
+        <h2 id="selTitle">Элемент</h2>
+        <div class="xywh">
+          <label>X <input type="number" step="0.5" id="pX"></label><label>Y <input type="number" step="0.5" id="pY"></label>
+          <label>Ш <input type="number" step="0.5" id="pW"></label><label>В <input type="number" step="0.5" id="pH"></label>
+        </div>
+        <span class="hint">Миллиметры от левого верхнего угла линии реза</span>
+        <div class="row" id="fitBtns">
+          <button class="btn sm" data-fit="bleed" title="Растянуть на всю страницу с вылетом под обрез">Под обрез</button>
+          <button class="btn sm" data-fit="safe" title="Вписать в безопасную зону">В поля</button>
+          <button class="btn sm" data-fit="center">По центру</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="pUp" title="Выше других">На передний план</button>
+          <button class="btn sm" id="pDown" title="Ниже других">Назад</button>
+        </div>
+        <label class="field">Непрозрачность <input type="range" id="pOpacity" min="0" max="100"><output id="oOpacity"></output></label>
+        <div class="dpi" id="dpiInfo" hidden></div>
+      </section>
+      <section id="textProps" hidden>
+        <h2>Оформление</h2>
+        <textarea id="tText" rows="4" placeholder="Текст"></textarea>
+        <label class="field col">Шрифт <select id="tFamily"></select></label>
+        <label class="field col">Начертание <select id="tStyle"></select></label>
+        <div class="grid3">
+          <label>Размер, pt <input type="number" id="tSize" min="4" max="400" step="0.5"></label>
+          <label>Интерлиньяж <input type="number" id="tLh" min="0.7" max="3" step="0.05"></label>
+          <label>Цвет <input type="color" id="tColor"></label>
+        </div>
+        <div class="seg" id="tAlign"><button data-a="left" aria-pressed="true">Слева</button><button data-a="center" aria-pressed="false">По центру</button><button data-a="right" aria-pressed="false">Справа</button></div>
+        <span class="hint" id="fontHint"></span>
+      </section>
+      <section id="rectProps" hidden>
+        <h2>Плашка</h2>
+        <label class="field">Цвет <input type="color" id="rFill"></label>
+      </section>
+      <section>
+        <div class="row"><button class="btn sm" id="pDup">Дублировать</button><button class="btn sm" id="pCopyAll" title="Скопировать элемент на все страницы или форматы">На все страницы</button><button class="btn sm danger" id="pDel">Удалить</button></div>
+      </section>
+    </div>
+    <section class="docinfo" id="docInfo"></section>
+  </aside>
+</div>
+
+<!-- стартовый экран -->
+<div class="start" id="start">
+  <div class="startbox">
+    <h1>Что верстаем?</h1>
+    <div class="choices">
+      <div class="choice">
+        <h2>Меню на скобе</h2>
+        <p class="hint">Брошюра: обложка и страницы разворотами. Число страниц кратно 4.</p>
+        <label class="field col">Формат страницы <select id="sBookFmt"></select></label>
+        <label class="field col">Страниц <select id="sBookPages"><option>4</option><option selected>8</option><option>12</option><option>16</option><option>20</option><option>24</option></select></label>
+        <button class="btn primary wide" id="sBook">Создать меню</button>
+      </div>
+      <div class="choice">
+        <h2>Афиша в разных форматах</h2>
+        <p class="hint">Одна работа на несколько форматов. Можно подогнать каждый.</p>
+        <div class="checks" id="sPosterFmts"></div>
+        <button class="btn primary wide" id="sPoster">Создать афишу</button>
+      </div>
+    </div>
+    <div class="row center"><button class="btn" id="sOpen">Открыть сохранённый проект</button><button class="btn ghost" id="sClose" hidden>Вернуться к текущему</button></div>
+  </div>
+</div>
+
+<div class="modal" id="printDlg" hidden><div class="mbox" role="dialog" aria-labelledby="prTitle">
+  <h2 id="prTitle">Печать на принтере</h2>
+  <div class="prgrid">
+    <div class="prev"><canvas id="prPrev" width="320" height="320"></canvas><span class="hint" id="prInfo"></span></div>
+    <div class="prctl">
+      <div class="field col" id="prWhatBox"><span class="lbl">Что печатать</span><div class="seg" id="prWhat"></div></div>
+      <div class="field col"><span class="lbl">Бумага</span><div class="seg" id="prPaper"><button data-v="A4" aria-pressed="true">A4</button><button data-v="A3" aria-pressed="false">A3</button></div></div>
+      <div class="field col"><span class="lbl">Размер</span><div class="seg" id="prScale"><button data-v="real" aria-pressed="true">Как в жизни (100%)</button><button data-v="fit" aria-pressed="false">Вписать в лист</button></div></div>
+      <label class="check"><input type="checkbox" id="prMarks" checked> Метки реза и вылеты</label>
+      <p class="hint" id="prNote"></p>
+    </div>
+  </div>
+  <div class="row end"><button class="btn" id="prCancel">Отмена</button><button class="btn primary" id="prGo">Печать…</button></div>
+</div></div>
+<div class="drop" id="drop" hidden>Отпусти, чтобы добавить на страницу</div>
+<div class="busy" id="busy" hidden><div class="busybox"><b id="busyTitle">Готовлю PDF…</b><span class="hint" id="busyText"></span></div></div>
+<div class="toast" id="toast" hidden></div>
+<script src="../vendor/pdf-lib.min.js"></script>
+<script src="../vendor/fontkit.umd.min.js"></script>
+<script src="layout.js"></script>
+</body>
+</html>

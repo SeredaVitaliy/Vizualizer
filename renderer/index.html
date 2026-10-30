@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self'">
+<title>Студия</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="studio.css">
+</head>
+<body>
+<header class="top">
+  <span class="brand">Студия</span>
+  <button class="btn" id="bOpen" title="Открыть картинку (Ctrl+O)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2.5 5.5a1.5 1.5 0 0 1 1.5-1.5h3.5l2 2h6.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5H4a1.5 1.5 0 0 1-1.5-1.5z"/></svg>Открыть</button>
+  <button class="btn" id="bSave" title="Сохранить как (Ctrl+S)" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v9m0 0l-3.5-3.5M10 12l3.5-3.5M3.5 13.5v2a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg>Сохранить</button>
+  <span class="sep"></span>
+  <button class="btn ghost" id="bUndo" title="Отменить (Ctrl+Z)" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 5L4 8.5 7.5 12"/><path d="M4 8.5h8a4 4 0 0 1 0 8H9"/></svg>Отменить</button>
+  <button class="btn ghost" id="bRedo" title="Повторить (Ctrl+Shift+Z)" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 5L16 8.5 12.5 12"/><path d="M16 8.5H8a4 4 0 0 0 0 8h3"/></svg></button>
+  <button class="btn ghost" id="bCompare" title="Удерживай, чтобы увидеть, как было до последней правки" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M10 2.5v15"/></svg>Было / стало</button>
+  <button class="btn ghost" id="bToVector" title="Открыть текущую картинку в векторизаторе" disabled>В вектор →</button>
+  <button class="btn ghost" id="bToLayout" title="Поставить текущую картинку на страницу в вёрстке" disabled>В вёрстку →</button>
+  <button class="btn ghost" id="bPrint" title="Распечатать на принтере (Ctrl+P)" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5.5 7.5V3h9v4.5"/><rect x="2.5" y="7.5" width="15" height="7" rx="1.5"/><path d="M5.5 12h9v5h-9z" fill="var(--surface)"/></svg>Печать</button>
+  <span class="grow"></span>
+  <div class="popwrap">
+    <button class="pill" id="enginePill" aria-haspopup="true" aria-expanded="false" title="Нейросеть и последние картинки"><i class="dot"></i><span id="engineText">Нейросеть выключена</span><span class="hcount" id="histBadge" hidden></span><svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 4.5l3 3 3-3"/></svg></button>
+    <div class="pop" id="histPop" hidden>
+      <div class="pophead"><span class="lbl" id="popEngine">Нейросеть выключена</span><span class="grow"></span><button class="btn sm" id="bUnload" hidden title="Освободить память видеокарты">Выгрузить</button><button class="btn sm ghost" id="bEngLog" hidden>Журнал</button></div>
+      <div class="pophead"><span class="lbl">Последние картинки</span><span class="hint" id="histCount"></span><span class="grow"></span><button class="btn sm ghost" id="histDir" title="Открыть папку с картинками">Папка</button><button class="btn sm" id="histClear">Очистить</button></div>
+      <div class="hgrid" id="histGrid"></div>
+      <p class="hint" style="margin:0 14px 12px">Сюда сами попадают результаты нейросетей: улучшение, вырезанный фон, правки и новые картинки. Клик — открыть в редакторе.</p>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="rail" aria-label="Инструменты">
+    <button data-tab="quality" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.2 5.4L20 9l-4.4 3.8L17 18.5 12 15.6 7 18.5l1.4-5.7L4 9l5.8-.6z"/></svg>Улучшить</button>
+    <button data-tab="cutout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6.5" cy="7" r="2.5"/><circle cx="6.5" cy="17" r="2.5"/><path d="M8.6 8.4L20 17M8.6 15.6L20 7"/></svg>Фон и лишнее</button>
+    <button data-tab="edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M17 3l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" fill="currentColor" stroke="none"/></svg>Правка словами</button>
+    <button data-tab="create"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 16l5-5 4 4 3-3 5 5"/><circle cx="15.5" cy="9" r="1.5"/></svg>Создать</button>
+    <button data-tab="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8l4 4v13H6z"/><path d="M9 13l2 2 4-4"/></svg>Проверка макета</button>
+    <button data-tab="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 5.5h16v10H10l-4 3.5v-3.5H4z"/></svg>Ассистент</button>
+    <button data-tab="layout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="4" width="7.5" height="16" rx="1"/><rect x="13" y="4" width="7.5" height="16" rx="1"/><path d="M6 8h3M6 11h3M15.5 8h3M15.5 11h3M15.5 14h2"/></svg>Вёрстка</button>
+    <button data-tab="vector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 19C8 9 16 15 19 5"/><rect x="3.5" y="17.5" width="3" height="3"/><rect x="17.5" y="3.5" width="3" height="3"/></svg>Вектор</button>
+    <span class="spacer"></span>
+    <button data-tab="models"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>Модели<i class="badge" id="modelsBadge" hidden></i></button>
+  </nav>
+
+  <div class="views">
+    <!-- общий холст для работы с картинкой -->
+    <section class="view" id="viewImage">
+      <div class="work">
+        <div class="stagebar">
+          <span class="info" id="docInfo">Нет картинки</span>
+          <span class="grow"></span>
+          <div class="row" id="brushBar" hidden>
+            <span class="lbl">Кисть</span>
+            <div class="seg" id="brushMode"><button data-m="paint" aria-pressed="true">Рисовать</button><button data-m="erase" aria-pressed="false">Стирать</button></div>
+            <input type="range" id="brushSize" min="4" max="300" value="40" style="width:110px;accent-color:var(--accent)" aria-label="Размер кисти">
+            <button class="btn sm" id="bMaskClear">Очистить</button>
+          </div>
+          <div class="seg" id="zoomSeg"><button data-z="fit" aria-pressed="true">Вписать</button><button data-z="1" aria-pressed="false">100%</button><button data-z="2" aria-pressed="false">200%</button></div>
+        </div>
+        <div class="stage" id="stage">
+          <div class="stage-inner"><div class="cv-wrap" id="cvWrap" hidden><canvas id="mainCv"></canvas><canvas id="maskCv"></canvas><div class="brushRing" id="brushRing" hidden></div></div></div>
+          <div class="empty" id="empty"><div class="box">
+            <h2>Открой картинку</h2>
+            <p>Перетащи файл сюда, вставь из буфера (Ctrl+V) или нажми кнопку. PNG, JPG, WebP.</p>
+            <button class="btn primary" id="bOpen2">Выбрать файл</button>
+          </div></div>
+          <div class="busy" id="busy" hidden><div class="box">
+            <div class="title" id="busyTitle">Работаю…</div>
+            <div class="hint" id="busyText"></div>
+            <div class="bar" id="busyBar"><i></i></div>
+            <img id="busyPreview" alt="" hidden>
+            <div class="row"><button class="btn sm" id="busyCancel" hidden>Отменить</button></div>
+          </div></div>
+        </div>
+      </div>
+
+      <aside class="panel" id="panel">
+        <!-- Улучшить -->
+        <div data-panel="quality">
+          <section>
+            <h2>Улучшение качества</h2>
+            <p class="hint">Убирает размытие, шум и артефакты сжатия, увеличивает разрешение. Удобно перед печатью меню или перед векторизацией.</p>
+            <div class="need" data-need="quality" hidden></div>
+            <div class="field"><span class="lbl">Что на картинке</span>
+              <div class="opts" id="qModel">
+                <button class="opt" data-v="photo" aria-pressed="true">Фото<small>блюда, интерьер, люди</small></button>
+                <button class="opt" data-v="art" aria-pressed="false">Графика<small>логотипы, рисунки, иконки</small></button>
+              </div></div>
+            <div class="field"><span class="lbl">Увеличить</span>
+              <div class="seg" id="qScale"><button data-v="1" aria-pressed="false">Не увеличивать</button><button data-v="2" aria-pressed="true">в 2 раза</button><button data-v="4" aria-pressed="false">в 4 раза</button></div>
+              <span class="hint" id="qOut"></span></div>
+            <button class="btn primary wide" id="qRun">Улучшить</button>
+          </section>
+        </div>
+
+        <!-- Фон и лишнее -->
+        <div data-panel="cutout" hidden>
+          <section>
+            <h2>Убрать фон</h2>
+            <p class="hint">Нейросеть сама найдёт главный объект и вырежет его.</p>
+            <div class="need" data-need="cutout" hidden></div>
+            <button class="btn primary wide" id="cRun">Убрать фон</button>
+            <div id="cTune" hidden style="display:flex;flex-direction:column;gap:12px">
+              <div class="field"><label class="lbl" for="cEdge">Края</label><output id="cEdgeO"></output>
+                <input type="range" id="cEdge" min="0" max="100" value="45">
+                <span class="hint">Левее — мягкие края (волосы, пар), правее — чёткие (тарелки, упаковка)</span></div>
+              <div class="field"><span class="lbl">Новый фон</span>
+                <div class="opts" id="cBg">
+                  <button class="opt" data-v="none" aria-pressed="true">Прозрачный</button>
+                  <button class="opt" data-v="white" aria-pressed="false">Белый</button>
+                  <button class="opt" data-v="color" aria-pressed="false">Цвет</button>
+                </div></div>
+              <div class="colors" id="cColorRow" hidden><input type="color" id="cColor" value="#f3ead8"><span class="hint">Цвет фона</span></div>
+            </div>
+          </section>
+          <section>
+            <h2>Убрать лишнее</h2>
+            <p class="hint">Закрась кистью предмет, надпись или пятно — нейросеть заполнит место фоном.</p>
+            <button class="btn wide" id="rBrush">Закрасить кистью</button>
+            <button class="btn primary wide" id="rRun" disabled>Убрать закрашенное</button>
+            <p class="hint">Совет: закрашивай с запасом по краям. Для больших объектов лучше несколько проходов.</p>
+          </section>
+        </div>
+
+        <!-- Правка словами -->
+        <div data-panel="edit" hidden>
+          <section>
+            <h2>Правка словами</h2>
+            <p class="hint">Опиши, что изменить. Нейросеть перерисует картинку или выделенную кистью область.</p>
+            <div class="need" data-need="image" hidden></div>
+            <div class="field"><span class="lbl">Где менять</span>
+              <div class="seg" id="eScope"><button data-v="all" aria-pressed="true">Всю картинку</button><button data-v="area" aria-pressed="false">Только выделенное</button></div>
+              <span class="hint" id="eScopeHint"></span></div>
+            <div class="field"><span class="lbl">Быстрые правки</span><div class="chips" id="eChips" style="grid-column:1/-1"></div></div>
+            <textarea id="ePrompt" placeholder="Например: сделай свет тёплым, добавь веточку розмарина на тарелку"></textarea>
+            <p class="hint">Лучше всего понимает английский. Русский тоже работает, но проще. Быстрые правки уже переведены.</p>
+            <label class="check"><input type="checkbox" id="eRestore" checked> Вернуть исходное разрешение (через улучшение качества)</label>
+            <div class="row"><button class="btn primary" id="eRun" style="flex:1">Применить</button><button class="btn" id="eAgain" disabled title="Тот же запрос, другой вариант">Другой вариант</button></div>
+          </section>
+        </div>
+
+        <!-- Создать -->
+        <div data-panel="create" hidden>
+          <section>
+            <h2>Создать картинку</h2>
+            <p class="hint">Фото блюда, фон, иллюстрация для меню — по описанию.</p>
+            <div class="need" data-need="image" hidden></div>
+            <textarea id="gPrompt" placeholder="Например: a bowl of borscht with sour cream and dill, rustic wooden table"></textarea>
+            <div class="field"><span class="lbl">Стиль</span><div class="chips" id="gStyles" style="grid-column:1/-1"></div></div>
+            <div class="field"><span class="lbl">Формат</span>
+              <div class="seg" id="gSize" style="flex-wrap:wrap"><button data-v="1024x1024" aria-pressed="true">1:1</button><button data-v="768x1024" aria-pressed="false">3:4</button><button data-v="1024x768" aria-pressed="false">4:3</button><button data-v="576x1024" aria-pressed="false">9:16</button><button data-v="1024x576" aria-pressed="false">16:9</button></div></div>
+            <button class="btn primary wide" id="gRun">Создать</button>
+            <p class="hint">Одна картинка занимает от 30 секунд до нескольких минут — зависит от видеокарты.</p>
+          </section>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Проверка макета -->
+    <section class="view" id="viewCheck" hidden>
+      <div class="check-view">
+        <div class="pages" id="pages"><div class="empty-small">Открой PDF или картинку макета</div></div>
+        <div class="pagestage" id="pageStage">
+          <div class="empty-small" id="pageEmpty" style="align-self:center">
+            <p>Проверка опечаток, единообразия цен и единиц, а также разбор дизайна.</p>
+            <button class="btn primary" id="kOpen">Открыть макет</button>
+          </div>
+          <img id="pageImg" alt="Страница макета" hidden>
+        </div>
+        <div class="report">
+          <section style="padding:16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line)">
+            <div class="row"><button class="btn sm" id="kOpen2">Открыть другой</button><span class="hint" id="kFile"></span></div>
+            <div class="seg" id="kTab"><button data-v="text" aria-pressed="true">Тексты</button><button data-v="design" aria-pressed="false">Дизайн</button></div>
+            <div class="need" data-need="text" hidden></div>
+            <div id="kTextCtl" class="row"><button class="btn primary" id="kAi" disabled>Проверить с ИИ</button><span class="hint">Быстрая проверка без ИИ запускается сразу</span></div>
+            <div id="kDesignCtl" class="row" hidden><button class="btn primary" id="kDesign" disabled>Разобрать дизайн страницы</button></div>
+            <div class="bar" id="kBar" hidden><i></i></div>
+            <div class="hint" id="kStatus"></div>
+          </section>
+          <section style="padding:16px;flex:1">
+            <div class="issues" id="kIssues"></div>
+            <div class="prose" id="kDesignOut" hidden></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ассистент -->
+    <section class="view" id="viewChat" hidden>
+      <aside class="chats">
+        <button class="btn primary wide" id="chatNew"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>Новый чат</button>
+        <div class="chatlist" id="chatList"></div>
+      </aside>
+      <div class="chat-view">
+        <div class="msgs" id="msgs"></div>
+        <div class="composer">
+          <div class="need" data-need="text" hidden></div>
+          <div class="chips" id="chatChips">
+            <button data-p="Придумай короткие аппетитные описания для блюд (до 15 слов каждое): ">Описания блюд</button>
+            <button data-p="Проверь текст на ошибки и опечатки, перечисли исправления: ">Проверить текст</button>
+            <button data-p="Переведи на английский для меню ресторана, сохрани структуру: ">Перевести на английский</button>
+            <button data-p="Посмотри на картинку: что улучшить, чтобы она лучше смотрелась в меню?" data-img="1">Совет по картинке</button>
+          </div>
+          <div class="box">
+            <textarea id="chatIn" rows="2" placeholder="Напиши сообщение… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+            <button class="btn primary" id="chatSend">Отправить</button>
+            <button class="btn" id="chatStop" hidden>Стоп</button>
+          </div>
+          <div class="row"><label class="check"><input type="checkbox" id="chatImg"> Приложить текущую картинку из редактора</label><span class="grow"></span><button class="btn sm ghost" id="chatClear" title="Удалить этот чат">Удалить чат</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Векторизатор -->
+    <section class="view" id="viewVector" hidden><iframe class="vz" id="vzFrame" src="vectorizer/index.html" title="Векторизатор"></iframe></section>
+
+    <!-- Вёрстка -->
+    <section class="view" id="viewLayout" hidden><iframe class="vz" id="lyFrame" src="layout/index.html" title="Вёрстка"></iframe></section>
+
+    <!-- Модели -->
+    <section class="view" id="viewModels" hidden>
+      <div class="models-view"><div class="models-inner">
+        <h1>Модели</h1>
+        <p class="lead">Всё работает на этом компьютере, без интернета и подписок. Интернет нужен только один раз — чтобы скачать нейросети. Можно скачать только то, что нужно.</p>
+        <div id="packs"></div>
+        <div class="settings">
+          <div class="field"><span class="lbl">Папка с моделями</span><span class="hint" id="freeSpace"></span>
+            <div class="path" id="dataDir" style="grid-column:1/-1"></div>
+            <div class="row" style="grid-column:1/-1"><button class="btn sm" id="mChooseDir">Выбрать другую</button><button class="btn sm" id="mOpenDir">Открыть папку</button></div>
+            <span class="err" id="dirWarn" hidden style="grid-column:1/-1">В пути к папке есть русские буквы или пробелы — некоторые нейросети могут не запуститься. Лучше выбрать папку вида D:\StudioAI.</span>
+          </div>
+          <div class="field"><span class="lbl">Модель для текстов и проверки</span>
+            <div class="opts" id="mVlm">
+              <button class="opt" data-v="8b" aria-pressed="true">8B — точнее<small>~5,8 ГБ, медленнее</small></button>
+              <button class="opt" data-v="4b" aria-pressed="false">4B — быстрее<small>~3 ГБ, ошибается чаще</small></button>
+            </div></div>
+          <div class="field"><span class="lbl">Откуда качать модели</span>
+            <div class="seg" id="mHost"><button data-v="https://huggingface.co" aria-pressed="true">Hugging Face</button><button data-v="https://hf-mirror.com" aria-pressed="false">Зеркало</button></div>
+            <span class="hint">Если загрузка с Hugging Face не идёт или обрывается — переключи на зеркало.</span></div>
+          <details><summary>Журнал нейросети (для диагностики)</summary><div class="row" style="margin:8px 0"><button class="btn sm" id="mLog">Обновить</button><button class="btn sm" id="mTestImg">Проверить запуск: картинки</button><button class="btn sm" id="mTestTxt">Проверить запуск: текст</button></div><pre class="log" id="logOut">—</pre></details>
+        </div>
+      </div></div>
+    </section>
+  </div>
+</div>
+<div class="modal" id="printDlg" hidden><div class="mbox" role="dialog" aria-labelledby="prTitle">
+  <h2 id="prTitle">Печать</h2>
+  <div class="prgrid">
+    <div class="prev"><canvas id="prPrev" width="300" height="300"></canvas><span class="hint" id="prInfo"></span></div>
+    <div class="prctl">
+      <div class="field"><span class="lbl">Бумага</span><div class="seg" id="prPaper"><button data-v="A4" aria-pressed="true">A4</button><button data-v="A3" aria-pressed="false">A3</button><button data-v="A5" aria-pressed="false">A5</button></div></div>
+      <div class="field"><span class="lbl">Лист</span><div class="seg" id="prOrient"><button data-v="auto" aria-pressed="true">Авто</button><button data-v="p" aria-pressed="false">Книжный</button><button data-v="l" aria-pressed="false">Альбомный</button></div></div>
+      <div class="field"><span class="lbl">Размер на листе</span><div class="seg" id="prSize"><button data-v="fit" aria-pressed="true">Вписать в лист</button><button data-v="mm" aria-pressed="false">Ширина в мм</button></div>
+        <label class="mini" id="prWrap" hidden><input type="number" id="prW" min="5" max="1000" step="1"> мм шириной</label></div>
+      <p class="hint">Число копий, принтер и цвет выбираются в следующем окне Windows. Поля — 5 мм: почти все домашние принтеры не печатают у самого края.</p>
+    </div>
+  </div>
+  <div class="row end"><button class="btn" id="prCancel">Отмена</button><button class="btn primary" id="prGo">Печать…</button></div>
+</div></div>
+<div class="drop" id="drop" hidden>Отпусти, чтобы открыть</div>
+<div class="toast" id="toast" hidden></div>
+<script src="studio.js"></script>
+</body>
+</html>
